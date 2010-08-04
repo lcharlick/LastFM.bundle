@@ -34,7 +34,7 @@ class LastFmAgent(Agent.Artist):
     for dupe in toWhack:
       results.Remove(dupe)
 
-  def update(self, metadata, lang):
+  def update(self, metadata, media, lang):
     artist = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
     summary = artist.xpath('//bio/content')[0]
 
@@ -74,7 +74,7 @@ class LastFmAlbumAgent(Agent.Album):
       results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 90-dist))
     results.Sort('score', descending=True)
  
-  def update(self, metadata, lang):
+  def update(self, metadata, media, lang):
     (artistName, albumName) = metadata.id.split('/')
     artistName = String.Unquote(artistName).encode('utf-8')
     albumName = String.Unquote(albumName).encode('utf-8')
