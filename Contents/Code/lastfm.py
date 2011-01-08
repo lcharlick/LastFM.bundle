@@ -106,7 +106,7 @@ def SearchArtists(query, page=0, URLEncode = True):
   url = SEARCH_ARTISTS % (query, page)
   
   # Use HTML parsing, because it's more lenient of errors, but FIXME, XML
-  # gets the right encoding and for some reason HTML fucks it up to ISO8859-1.
+  # gets the right encoding and for some reason HTML messes it up to ISO8859-1.
   #
   try:
     content = XML.ElementFromURL(url)
