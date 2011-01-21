@@ -8,7 +8,7 @@ def Start():
   
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
-  languages = [Locale.Language.English]
+  languages = [Locale.Language.English, Locale.Language.Korean]
   
   def search(self, results, media, lang):
     
