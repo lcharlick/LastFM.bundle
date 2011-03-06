@@ -39,7 +39,6 @@ class LastFmAgent(Agent.Artist):
     summary = artist.xpath('//bio/content')[0]
 
     metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
-    print "TITLE:", metadata.title
     
     if summary.text:
       metadata.summary = self.decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
@@ -63,7 +62,8 @@ class LastFmAgent(Agent.Artist):
 
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
-  languages = [Locale.Language.English] 
+  languages = [Locale.Language.English]
+  fallback_agent = 'com.plexapp.agents.allmusic'
   
   def search(self, results, media, lang):
     for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
