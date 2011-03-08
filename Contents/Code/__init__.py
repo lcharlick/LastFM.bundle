@@ -63,7 +63,7 @@ class LastFmAgent(Agent.Artist):
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
   languages = [Locale.Language.English]
-  fallback_agent = 'com.plexapp.agents.allmusic'
+  #fallback_agent = 'com.plexapp.agents.allmusic'
   
   def search(self, results, media, lang):
     for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
