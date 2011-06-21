@@ -9,11 +9,22 @@ def Start():
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
   languages = [Locale.Language.English, Locale.Language.Korean]
+
+  def safe_strip(self, ss):
+    """
+      This method strips the diacritic marks from a string, but if it's too extreme (i.e. would remove everything,
+      as is the case with some foreign text), then don't perform the strip.
+    """
+    
+    s = String.StripDiacritics(ss)
+    if len(s.strip()) == 0:
+      return ss
+    return s
   
   def search(self, results, media, lang):
     
     score = 100
-    for r in lastfm.SearchArtists(String.StripDiacritics(media.artist))[0]:
+    for r in lastfm.SearchArtists(self.safe_strip(media.artist))[0]:
       id = r[0]
       if id.find('+noredirect') == -1:
         id = r[1]
