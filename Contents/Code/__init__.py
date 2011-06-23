@@ -8,12 +8,23 @@ def Start():
   
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
-  languages = [Locale.Language.English]
+  languages = [Locale.Language.English, Locale.Language.Korean]
+
+  def safe_strip(self, ss):
+    """
+      This method strips the diacritic marks from a string, but if it's too extreme (i.e. would remove everything,
+      as is the case with some foreign text), then don't perform the strip.
+    """
+    
+    s = String.StripDiacritics(ss)
+    if len(s.strip()) == 0:
+      return ss
+    return s
   
   def search(self, results, media, lang):
     
     score = 100
-    for r in lastfm.SearchArtists(String.StripDiacritics(media.artist))[0]:
+    for r in lastfm.SearchArtists(self.safe_strip(media.artist))[0]:
       id = r[0]
       if id.find('+noredirect') == -1:
         id = r[1]
@@ -39,7 +50,6 @@ class LastFmAgent(Agent.Artist):
     summary = artist.xpath('//bio/content')[0]
 
     metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
-    print "TITLE:", metadata.title
     
     if summary.text:
       metadata.summary = self.decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
@@ -63,7 +73,8 @@ class LastFmAgent(Agent.Artist):
 
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
-  languages = [Locale.Language.English] 
+  languages = [Locale.Language.English]
+  fallback_agent = 'com.plexapp.agents.allmusic'
   
   def search(self, results, media, lang):
     for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
