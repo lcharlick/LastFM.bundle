@@ -29,7 +29,7 @@ USER_RECOMMENDED_ARTISTS = API_BASE + "user.getRecommendedArtists" + API_KEY + "
 ARTIST_INFO = API_BASE + "artist.getinfo&artist=%s" + API_KEY
 ARTIST_SIMILAR = API_BASE + "artist.getsimilar&artist=%s" + API_KEY
 ARTIST_TRACKS = API_BASE + "artist.gettoptracks&artist=%s" + API_KEY
-ARTIST_ALBUMS = API_BASE + "artist.gettopalbums&artist=%s" + API_KEY
+ARTIST_ALBUMS = API_BASE + "artist.gettopalbums&artist=%s&limit=10000" + API_KEY
 ARTIST_VIDEOS = "http://www.last.fm/music/%s/+videos?page=%d"
 
 # Tag
@@ -127,7 +127,7 @@ def SearchArtists(query, page=0, URLEncode = True):
   return (artists, False)
   
 ##########################################################################
-def SearchAlbums(query, page, URLEncode = True):
+def SearchAlbums(query, page=0, URLEncode = True):
   albums = []
   if URLEncode:
     query = String.URLEncode(query)
@@ -139,7 +139,8 @@ def SearchAlbums(query, page, URLEncode = True):
     name = item.xpath('name')[0].text
     artistName = item.xpath('artist')[0].text
     image = Image(item)
-    album = (name, artistName, image)
+    url = item.xpath('url')[0].text
+    album = (name, artistName, image, url)
     albums.append(album)
   
   total = int(content.xpath("/lfm/results/opensearch:totalResults", namespaces=SEARCH_NAMESPACE)[0].text)

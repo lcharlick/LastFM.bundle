@@ -74,21 +74,29 @@ class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
   languages = [Locale.Language.English]
   fallback_agent = 'com.plexapp.agents.allmusic'
-  
   def search(self, results, media, lang):
-    for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
-      (name, artist, thumb, url) = album
-      albumID = url.split('/')[-1]
-      id = media.parent_metadata.id + '/' + albumID.replace('+', '%20')
-      dist = Util.LevenshteinDistance(name, media.album)
-      results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 90-dist))
+    if media.parent_metadata.id != 'Various%20Artists': 
+      for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
+        (name, artist, thumb, url) = album
+        albumID = url.split('/')[-1]
+        id = media.parent_metadata.id + '/' + albumID.replace('+', '%20')
+        dist = Util.LevenshteinDistance(name, media.album)
+        results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 90-dist))
+    else:
+      (albums, more) = lastfm.SearchAlbums(media.title)
+      for album in albums:
+        (name, artist, thumb, url) = album
+        if artist == 'Various Artists':
+          albumID = url.split('/')[-1]
+          id = media.parent_metadata.id + '/' + albumID.replace('+', '%20')
+          dist = Util.LevenshteinDistance(name, media.album)
+          results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 85-dist))
     results.Sort('score', descending=True)
  
   def update(self, metadata, media, lang):
     (artistName, albumName) = metadata.id.split('/')
     artistName = String.Unquote(artistName).encode('utf-8')
     albumName = String.Unquote(albumName).encode('utf-8')
-
     album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
     thumb = album.xpath("//image[@size='extralarge']")[0].text
     metadata.title = album.xpath("//name")[0].text
