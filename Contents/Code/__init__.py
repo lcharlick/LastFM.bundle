@@ -22,7 +22,6 @@ class LastFmAgent(Agent.Artist):
     return s
   
   def search(self, results, media, lang):
-    
     score = 100
     for r in lastfm.SearchArtists(self.safe_strip(media.artist))[0]:
       id = r[0]
@@ -97,7 +96,7 @@ class LastFmAlbumAgent(Agent.Album):
     metadata.originally_available_at = None
     if len(date) > 0:
       metadata.originally_available_at = Datetime.ParseDate(date).date()
-    if thumb not in metadata.posters:
+    if thumb not in metadata.posters and thumb != None:
       metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
     
     tracks = lastfm.AlbumTrackList(artistName, albumName)
