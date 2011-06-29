@@ -81,6 +81,19 @@ FLASH_RADIO_BASE = "http://www.last.fm/listen/%s"
 LASTFM_STATION_FORMAT = "lastfm://%s"
 
 #######################################################################
+def fetchAlbumTracks(albumID):
+  playlist = 'lastfm://playlist/album/' + albumID
+  tracks = []
+  for trackItem in XML.ElementFromURL(PLAYLIST_FETCH % playlist).xpath("/lfm/xspf:playlist/xspf:trackList/xspf:track", namespaces=XSPF_NAMESPACE):
+      title = trackItem.xpath('xspf:title', namespaces=XSPF_NAMESPACE)[0].text
+      #artist = trackItem.xpath('xspf:creator', namespaces=XSPF_NAMESPACE)[0].text
+      #image = trackItem.xpath('xspf:image', namespaces=XSPF_NAMESPACE)[0].text
+      #location = trackItem.xpath('xspf:location', namespaces=XSPF_NAMESPACE)[0].text
+      #duration = int(trackItem.xpath('xspf:duration', namespaces=XSPF_NAMESPACE)[0].text)
+      tracks.append(title)
+  return tracks
+  
+#######################################################################
 def SearchTags(query, page=1):
   tags = []
   url = SEARCH_TAGS % (String.URLEncode(query), page)
