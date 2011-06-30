@@ -9,18 +9,17 @@ def Start():
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
   languages = [Locale.Language.English, Locale.Language.Korean]
-
+  
   def safe_strip(self, ss):
     """
       This method strips the diacritic marks from a string, but if it's too extreme (i.e. would remove everything,
       as is the case with some foreign text), then don't perform the strip.
     """
-    
     s = String.StripDiacritics(ss)
     if len(s.strip()) == 0:
       return ss
     return s
-  
+    
   def search(self, results, media, lang):
     score = 100
     if media.artist == '[Unknown Artist]': return
@@ -31,8 +30,8 @@ class LastFmAgent(Agent.Artist):
       id = r[0]
       if id.find('+noredirect') == -1:
         id = r[1]
-        albumScore = self.checkArtistMatchUsingAlbums(media, id)
-        Log('artist: ' + media.artist + ' albumScore: ' + str(albumScore))
+        #albumScore = self.checkArtistMatchUsingAlbums(media, id)
+        #Log('artist: ' + media.artist + ' albumScore: ' + str(albumScore))
         id = String.Quote(id.encode('utf-8'))
         Log('Artist result: id: ' + id + '  name: '+ r[1] + '   score: ' + str(score) + '   thumb: ' + str(r[2]))
         results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name  = r[1], thumb = r[2], lang  = lang, score = score))
@@ -81,19 +80,18 @@ class LastFmAgent(Agent.Artist):
     metadata.genres.clear()
     for genre in artist.xpath('//artist/tags/tag/name'):
       metadata.genres.add(genre.text.capitalize())
-
+      
   def decodeXml(self, text):
     trans = [('&amp;','&'),('&quot;','"'),('&lt;','<'),('&gt;','>'),('&apos;','\''),('\n ','\n')]
     for src, dst in trans:
       text = text.replace(src, dst)
     return text
-
+    
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
   languages = [Locale.Language.English]
   fallback_agent = 'com.plexapp.agents.allmusic'
   def search(self, results, media, lang):
-    Log('album search')
     if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
     if media.parent_metadata.id != 'Various%20Artists': 
       for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
@@ -112,14 +110,13 @@ class LastFmAlbumAgent(Agent.Album):
           dist = Util.LevenshteinDistance(name, media.album)
           results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 85-dist))
     results.Sort('score', descending=True)
-
+    
   def checkAlbumMatchUsingTracks(self, media, albumID):
     lastfm.fetchAlbumTracks(albumID)
     score = 0
     return score
  
   def update(self, metadata, media, lang):
-    Log('album update')
     (artistName, albumName) = metadata.id.split('/')
     artistName = String.Unquote(artistName).encode('utf-8')
     albumName = String.Unquote(albumName).encode('utf-8')
@@ -132,7 +129,6 @@ class LastFmAlbumAgent(Agent.Album):
       metadata.originally_available_at = Datetime.ParseDate(date).date()
     if thumb not in metadata.posters and thumb != None:
       metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
-    
     tracks = lastfm.AlbumTrackList(artistName, albumName)
     for num in range(len(tracks)):
       metadata.tracks[str(num+1)].name = tracks[num][0]
