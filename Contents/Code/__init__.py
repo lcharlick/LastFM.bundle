@@ -21,22 +21,25 @@ class LastFmAgent(Agent.Artist):
     return s
     
   def search(self, results, media, lang):
-    score = 100
+    score = 90
     if media.artist == '[Unknown Artist]': return
     if media.artist == 'Various Artists':
       results.Append(MetadataSearchResult(id = 'Various%20Artists', name= 'Various Artists', thumb = 'http://userserve-ak.last.fm/serve/252/46209667.png', lang  = lang, score = 100))
       return
-    for r in lastfm.SearchArtists(self.safe_strip(media.artist))[0]:
+    for r in lastfm.SearchArtists(self.safe_strip(media.artist),limit=10)[0]:
       id = r[0]
       if id.find('+noredirect') == -1:
         id = r[1]
-        #albumScore = self.checkArtistMatchUsingAlbums(media, id)
-        #Log('artist: ' + media.artist + ' albumScore: ' + str(albumScore))
+        dist = Util.LevenshteinDistance(r[1].lower(), media.artist.lower())
+        albumBonus = self.bonusArtistMatchUsingAlbums(media, artistID=id, maxBonus=5)
+        Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus))
         id = String.Quote(id.encode('utf-8'))
         Log('Artist result: id: ' + id + '  name: '+ r[1] + '   score: ' + str(score) + '   thumb: ' + str(r[2]))
-        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name  = r[1], thumb = r[2], lang  = lang, score = score))
+        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = r[1], thumb = r[2], lang  = lang, score = score + albumBonus - dist))
         score = score - 2
-    
+      else:
+        pass
+        #Log('************************REDIRECT****************')
     # Finally, de-dupe the results.
     toWhack = []
     resultMap = {}
@@ -48,25 +51,35 @@ class LastFmAgent(Agent.Artist):
     for dupe in toWhack:
       results.Remove(dupe)
   
-  def checkArtistMatchUsingAlbums(self, media, artistID):
+  def bonusArtistMatchUsingAlbums(self, media, artistID, maxBonus=5):
+    Log('bonusArtistMatchUsingAlbums')
     lastFM_artistAlbums = []
     for album in lastfm.ArtistAlbums(artistID):
       (name, artist, thumb, url) = album
       lastFM_artistAlbums.append(name.lower())
-    if len(lastFM_artistAlbums) == 0: return 100 #no last.fm albums for the artist, so abort!
-    solidMatchCount = 0
+    if len(lastFM_artistAlbums) == 0: return 0 #no last.fm albums for the artist, so abort!
+    bonus = 0
     for a in media.children:
-      artist = a.title.lower()
+      album = a.title.lower()
       for lfa in lastFM_artistAlbums:
-        score = Util.LevenshteinDistance(lfa, artist)
-        if score <= 2: 
-          Log('solid match!')
-          solidMatchCount += 1
-    return solidMatchCount
+        score = Util.LevenshteinDistance(lfa, album)
+        #Log(lfa, album, score)
+        if score <= 2: #pretty solid match
+          bonus += 1
+          if bonus == maxBonus: break
+      if bonus == 0 and album[-1:] == ')': #if we got nothing, let's try again without anything in paranthesis [e.g.'limited edition'] 
+        album = album[:album.rfind('(')].strip()
+        for lfa in lastFM_artistAlbums:
+          score = Util.LevenshteinDistance(lfa, album)
+          #Log(lfa, album, score)
+          if score <= 2: #pretty solid match
+            bonus += 1
+            if bonus == maxBonus: break
+    return bonus
     
   def update(self, metadata, media, lang):
+    #Log('artist update for: ' + metadata.id)
     artist = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
-    albumScore = self.checkArtistMatchUsingAlbums(media, '11000')
     summary = artist.xpath('//bio/content')[0]
     metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
     if summary.text:
@@ -92,14 +105,20 @@ class LastFmAlbumAgent(Agent.Album):
   languages = [Locale.Language.English]
   fallback_agent = 'com.plexapp.agents.allmusic'
   def search(self, results, media, lang):
+    #Log('album search for: ' + media.album)
     if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
-    if media.parent_metadata.id != 'Various%20Artists': 
+    if media.parent_metadata.id != 'Various%20Artists':
       for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
         (name, artist, thumb, url) = album
         albumID = url.split('/')[-1]
-        id = media.parent_metadata.id + '/' + albumID.replace('+', '%20')
-        dist = Util.LevenshteinDistance(name, media.album)
-        results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 90-dist))
+        id = '/'.join(url.split('/')[-2:]).replace('+','%20')
+        dist = Util.LevenshteinDistance(name.lower(), media.album.lower())
+        # Sanity check to make sure we have SOME common substring.
+        longestCommonSubstring = len(Util.LongestCommonSubstring(name.lower(), media.album.lower()))
+        # If we don't have at least X% in common, then penalize the score
+        if (float(longestCommonSubstring) / len(media.album)) < .15: dist = dist + 10
+        #Log('scannerAlbum: ' + media.album + ' last.fmAlbum: ' + name + ' score=' + str(92-dist))
+        results.Append(MetadataSearchResult(id = id.replace('%2B','%20').replace('%25','%'), name = name, thumb = thumb, lang  = lang, score = 92-dist))
     else:
       (albums, more) = lastfm.SearchAlbums(media.title)
       for album in albums:
@@ -107,19 +126,47 @@ class LastFmAlbumAgent(Agent.Album):
         if artist == 'Various Artists':
           albumID = url.split('/')[-1]
           id = media.parent_metadata.id + '/' + albumID.replace('+', '%20')
-          dist = Util.LevenshteinDistance(name, media.album)
+          dist = Util.LevenshteinDistance(name.lower(), media.album.lower())
+          # Sanity check to make sure we have SOME common substring.
+          longestCommonSubstring = len(Util.LongestCommonSubstring(name.lower(), media.album.lower()))
+          # If we don't have at least X% in common, then penalize the score
+          if (float(longestCommonSubstring) / len(media.album)) < .15: dist = dist - 10
           results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 85-dist))
     results.Sort('score', descending=True)
+    for r in results[:5]:
+      #Track bonus on the top 5 closest title-based matches
+      trackBonus = self.bonusAlbumMatchUsingTracks(media, r.id)
+      #except: trackBonus = 0
+      #Log('album: ' + media.title + ' trackBonus: ' + str(trackBonus))
+      r.score = r.score + trackBonus
+    results.Sort('score', descending=True)
     
-  def checkAlbumMatchUsingTracks(self, media, albumID):
-    lastfm.fetchAlbumTracks(albumID)
-    score = 0
-    return score
- 
-  def update(self, metadata, media, lang):
-    (artistName, albumName) = metadata.id.split('/')
+  def bonusAlbumMatchUsingTracks(self, media, id):
+    (artistName, albumName) = self.artistAlbumFromID(id)
+    lastFM_albumTracks = []
+    #Log('fetching AlbumTrackList for: ' + albumName)
+    for track in lastfm.AlbumTrackList(artistName, albumName):
+      (trackName, artist, none1, trackUrl, none2) = track
+      lastFM_albumTracks.append(trackName)
+    if len(lastFM_albumTracks) == 0: return 0 #no last.fm tracks for the album, so abort!
+    bonus = 0
+    for a in media.children:
+      track = a.title.lower()
+      for lft in lastFM_albumTracks:
+        score = Util.LevenshteinDistance(lft.lower(), track)
+        if score <= 2:
+          bonus += 1
+    return bonus
+  
+  def artistAlbumFromID(self, id):
+    (artistName, albumName) = id.split('/') 
     artistName = String.Unquote(artistName).encode('utf-8')
     albumName = String.Unquote(albumName).encode('utf-8')
+    return (artistName, albumName)
+ 
+  def update(self, metadata, media, lang):
+    (artistName, albumName) = self.artistAlbumFromID(metadata.id)
+    #Log('Album update for: ' + albumName)
     album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
     thumb = album.xpath("//image[@size='extralarge']")[0].text
     metadata.title = album.xpath("//name")[0].text
@@ -131,5 +178,6 @@ class LastFmAlbumAgent(Agent.Album):
       metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
     tracks = lastfm.AlbumTrackList(artistName, albumName)
     for num in range(len(tracks)):
-      metadata.tracks[str(num+1)].name = tracks[num][0]
+      pass
+      #metadata.tracks[str(num+1)].name = tracks[num][0]
       

@@ -68,7 +68,7 @@ LIBRARY_ADD_TRACK = API_BASE + "library.addTrack&artist=%s&track=%s" + API_KEY +
 # Search
 SEARCH_NAMESPACE   = {'opensearch':'http://a9.com/-/spec/opensearch/1.1/'}
 SEARCH_TAGS  = API_BASE + "tag.search&tag=%s&page=%d" + API_KEY
-SEARCH_ARTISTS = API_BASE + "artist.search&artist=%s&page=%d" + API_KEY
+SEARCH_ARTISTS = API_BASE + "artist.search&artist=%s&page=%d&limit=%d" + API_KEY
 SEARCH_ALBUMS = API_BASE + "album.search&album=%s&page=%d" +API_KEY
 
 # Radio
@@ -110,13 +110,13 @@ def SearchTags(query, page=1):
   return (tags, more)
   
 #######################################################################
-def SearchArtists(query, page=0, URLEncode = True):
+def SearchArtists(query, page=0, URLEncode = True, limit=10):
   artists = []
   if URLEncode:
     query = String.URLEncode(query)
   else:
     query = query.replace(' ','+')
-  url = SEARCH_ARTISTS % (query, page)
+  url = SEARCH_ARTISTS % (query, page, limit)
   
   # Use HTML parsing, because it's more lenient of errors, but FIXME, XML
   # gets the right encoding and for some reason HTML messes it up to ISO8859-1.
