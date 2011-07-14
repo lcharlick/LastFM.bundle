@@ -11,7 +11,7 @@ DISPLAY_METADATA = "displayMetaData"
 SECRET = "95305a7a167653058d921994b58eaf3b"
 KEY = "d5310352469c2631e5976d0f4a599773"
 API_KEY = "&api_key="+KEY
-API_BASE = "http://ws.audioscrobbler.com/2.0/?method="
+API_BASE = "http://lastfm.plexapp.com/2.0/?method="
 
 BASE_URL = "http://www.last.fm%s"
 # User authentication
