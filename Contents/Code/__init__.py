@@ -105,6 +105,9 @@ class LastFmAlbumAgent(Agent.Album):
   languages = [Locale.Language.English]
   fallback_agent = 'com.plexapp.agents.allmusic'
   def search(self, results, media, lang):
+    if media.parent_metadata.id is None:
+      return None
+    
     #Log('album search for: ' + media.album)
     if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
     if media.parent_metadata.id != 'Various%20Artists':
