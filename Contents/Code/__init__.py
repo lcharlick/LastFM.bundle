@@ -26,7 +26,7 @@ class LastFmAgent(Agent.Artist):
     if media.artist == 'Various Artists':
       results.Append(MetadataSearchResult(id = 'Various%20Artists', name= 'Various Artists', thumb = 'http://userserve-ak.last.fm/serve/252/46209667.png', lang  = lang, score = 100))
       return
-    for r in lastfm.SearchArtists(self.safe_strip(media.artist),limit=10)[0]:
+    for r in lastfm.SearchArtists(self.safe_strip(media.artist.lower()),limit=5)[0]:
       id = r[0]
       if id.find('+noredirect') == -1:
         id = r[1]
@@ -83,7 +83,7 @@ class LastFmAgent(Agent.Artist):
     summary = artist.xpath('//bio/content')[0]
     metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
     if summary.text:
-      metadata.summary = self.decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
+      metadata.summary = decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
     try:
       url = artist.xpath('//artist/image[@size="mega"]//text()')[0]
       if url not in metadata.posters:
@@ -93,12 +93,6 @@ class LastFmAgent(Agent.Artist):
     metadata.genres.clear()
     for genre in artist.xpath('//artist/tags/tag/name'):
       metadata.genres.add(genre.text.capitalize())
-      
-  def decodeXml(self, text):
-    trans = [('&amp;','&'),('&quot;','"'),('&lt;','<'),('&gt;','>'),('&apos;','\''),('\n ','\n')]
-    for src, dst in trans:
-      text = text.replace(src, dst)
-    return text
     
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
@@ -107,7 +101,6 @@ class LastFmAlbumAgent(Agent.Album):
   def search(self, results, media, lang):
     if media.parent_metadata.id is None:
       return None
-    
     #Log('album search for: ' + media.album)
     if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
     if media.parent_metadata.id != 'Various%20Artists':
@@ -123,7 +116,7 @@ class LastFmAlbumAgent(Agent.Album):
         #Log('scannerAlbum: ' + media.album + ' last.fmAlbum: ' + name + ' score=' + str(92-dist))
         results.Append(MetadataSearchResult(id = id.replace('%2B','%20').replace('%25','%'), name = name, thumb = thumb, lang  = lang, score = 92-dist))
     else:
-      (albums, more) = lastfm.SearchAlbums(media.title)
+      (albums, more) = lastfm.SearchAlbums(media.title.lower())
       for album in albums:
         (name, artist, thumb, url) = album
         if artist == 'Various Artists':
@@ -148,9 +141,13 @@ class LastFmAlbumAgent(Agent.Album):
     (artistName, albumName) = self.artistAlbumFromID(id)
     lastFM_albumTracks = []
     #Log('fetching AlbumTrackList for: ' + albumName)
-    for track in lastfm.AlbumTrackList(artistName, albumName):
-      (trackName, artist, none1, trackUrl, none2) = track
-      lastFM_albumTracks.append(trackName)
+    #WAS:
+    #for track in lastfm.AlbumTrackList(artistName, albumName):
+    #  (trackName, artist, none1, trackUrl, none2) = track
+    album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
+    tracks = album.xpath('//track/name')
+    for track in tracks:
+      lastFM_albumTracks.append(track.text)
     if len(lastFM_albumTracks) == 0: return 0 #no last.fm tracks for the album, so abort!
     bonus = 0
     for a in media.children:
@@ -159,6 +156,7 @@ class LastFmAlbumAgent(Agent.Album):
         score = Util.LevenshteinDistance(lft.lower(), track)
         if score <= 2:
           bonus += 1
+    if len(media.children) == len(tracks): bonus += 5
     return bonus
   
   def artistAlbumFromID(self, id):
@@ -171,16 +169,28 @@ class LastFmAlbumAgent(Agent.Album):
     (artistName, albumName) = self.artistAlbumFromID(metadata.id)
     #Log('Album update for: ' + albumName)
     album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
-    thumb = album.xpath("//image[@size='extralarge']")[0].text
+    try: 
+      thumb = album.xpath("//image[@size='mega']")[0].text
+    except: 
+      thumb = album.xpath("//image[@size='extralarge']")[0].text
     metadata.title = album.xpath("//name")[0].text
+    try:
+      metadata.summary = decodeXml(re.sub(r'<[^<>]+>', '', album.xpath('//wiki/summary')[0].text))
+    except:
+      pass
     date = album.xpath("//releasedate")[0].text.split(',')[0].strip()
     metadata.originally_available_at = None
     if len(date) > 0:
       metadata.originally_available_at = Datetime.ParseDate(date).date()
     if thumb not in metadata.posters and thumb != None:
       metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
-    tracks = lastfm.AlbumTrackList(artistName, albumName)
-    for num in range(len(tracks)):
-      pass
+    #tracks = lastfm.AlbumTrackList(artistName, albumName)
+    #for num in range(len(tracks)):
+    #  pass
       #metadata.tracks[str(num+1)].name = tracks[num][0]
-      
+
+def decodeXml(text):
+  trans = [('&amp;','&'),('&quot;','"'),('&lt;','<'),('&gt;','>'),('&apos;','\''),('\n ','\n')]
+  for src, dst in trans:
+    text = text.replace(src, dst)
+  return text      
