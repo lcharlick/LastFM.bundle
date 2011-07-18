@@ -136,8 +136,8 @@ class LastFmAlbumAgent(Agent.Album):
           if (float(longestCommonSubstring) / len(media.album)) < .15: dist = dist - 10
           results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 85-dist))
     results.Sort('score', descending=True)
-    for r in results[:2]:
-      #Track bonus on the top 2 closest title-based matches
+    for r in results[:5]:
+      #Track bonus on the top 5 closest title-based matches
       trackBonus = self.bonusAlbumMatchUsingTracks(media, r.id)
       #except: trackBonus = 0
       #Log('album: ' + media.title + ' trackBonus: ' + str(trackBonus))
