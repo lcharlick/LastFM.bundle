@@ -144,7 +144,7 @@ class LastFmAlbumAgent(Agent.Album):
     #WAS:
     #for track in lastfm.AlbumTrackList(artistName, albumName):
     #  (trackName, artist, none1, trackUrl, none2) = track
-    album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
+    album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)), sleep=0.7)
     tracks = album.xpath('//track/name')
     for track in tracks:
       lastFM_albumTracks.append(track.text)
