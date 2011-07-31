@@ -414,7 +414,7 @@ def SimilarArtists(artistName):
 def ArtistAlbums(artistName):
         albums = []
         url = ARTIST_ALBUMS % String.Quote(artistName.encode('utf-8'), True)
-        for albumElement in XML.ElementFromURL(url, sleep=0.4).xpath('/lfm/topalbums/album'):
+        for albumElement in XML.ElementFromURL(url).xpath('/lfm/topalbums/album'):
             name = albumElement.xpath("name")[0].text
             url = albumElement.xpath('url')[0].text
             image = Image(albumElement)
