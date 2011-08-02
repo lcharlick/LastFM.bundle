@@ -17,7 +17,7 @@ class LastFmAgent(Agent.Artist):
     if len(s.strip()) == 0:
       return ss
     return s
-    
+  
   def search(self, results, media, lang):
     score = 90
     maxDist = 10
@@ -27,52 +27,37 @@ class LastFmAgent(Agent.Artist):
       return
     searchArtist = self.safe_strip(cleanSearchTerms(media.artist.lower()))
     for r in lastfm.SearchArtists(searchArtist,limit=5)[0]:
-      id = r[0]
-      if id.find('+noredirect') == -1:
-        id = r[1]
-        dist = Util.LevenshteinDistance(r[1].lower(), media.artist.lower())
-        if dist > maxDist: dist = maxDist
-        id = String.Quote(id.encode('utf-8')).replace('%2B','%20').replace('%25','%')
-        albumBonus = self.freebase_bonusArtistMatchUsingAlbums(media, r[1].lower(), id, maxBonus=10)
-        s = score + albumBonus - dist
-        Log('1 artist: ' + media.artist + ' albumBonus: ' + str(albumBonus) + ' dist: ' + str(dist))
-        Log('1 Artist result: id: ' + id + '  name: '+ r[1] + '   score: ' + str(s) + '   thumb: ' + str(r[2]))
-        results.Append(MetadataSearchResult(id = id, name = r[1], thumb = r[2], lang  = lang, score = s))
+      url = r[0]
+      Log(url)
+      if url.find('+noredirect') == -1:
+        name = r[1]
+        self.scoreArtist(name, url, results, media, lang, maxDist, score)
         score = score - 1
-      else:
-        pass
-        #Log('************************REDIRECT****************')
+    #Let's get similar/artist infos...last.fm hides good stuff in here :)
     score = 90
     try:
       artistInfo = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(searchArtist, True))[0]
-    except: 
+    except:
       artistInfo = None
     if artistInfo:
       if artistInfo.xpath('//artist/url')[0].text.count('+noredirect') == 0:
-        a = artistInfo.xpath('//artist/url')[0]
         name = artistInfo.xpath('//artist/name')[0].text
-        url = artistInfo.xpath('//artist/url')[0].text.split('/')[-1]
-        id = String.Quote(url.encode('utf-8')).replace('%2B','%20').replace('%25','%')
-        dist = Util.LevenshteinDistance(name.lower(), media.artist.lower())
-        if dist > maxDist: dist = maxDist
-        albumBonus = self.freebase_bonusArtistMatchUsingAlbums(media, name.lower(), id, maxBonus=10)
-        s = score + albumBonus - dist
-        Log('2 artist: ' + media.artist + ' albumBonus: ' + str(albumBonus) + ' dist: ' + str(dist))
-        Log('2 Artist result: id: ' + id + '  name: '+ name + '   score: ' + str(s))
-        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = name, lang  = lang, score = s))
+        url = artistInfo.xpath('//artist/url')[0].text
+        self.scoreArtist(name, url, results, media, lang, maxDist, score)
         score = score - 1
       for a in artistInfo.xpath('//similar/artist')[:2]:
         name = a.xpath('./name')[0].text
-        url = a.xpath('./url')[0].text.split('/')[-1]
-        id = String.Quote(url.encode('utf-8')).replace('%2B','%20').replace('%25','%')
-        dist = Util.LevenshteinDistance(name.lower(), media.artist.lower())
-        if dist > maxDist: dist = maxDist
-        albumBonus = self.freebase_bonusArtistMatchUsingAlbums(media, name.lower(), id, maxBonus=10)
-        s = score + albumBonus - dist
-        Log('2 artist: ' + media.artist + ' albumBonus: ' + str(albumBonus) + ' dist: ' + str(dist))
-        Log('2 Artist result: id: ' + id + '  name: '+ name + '   score: ' + str(s))
-        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = name, lang  = lang, score = s))
+        url = a.xpath('./url')[0].text
+        self.scoreArtist(name, url, results, media, lang, maxDist, score)
         score = score - 1
+    #See if there is a corrected artist for our spelling
+    score = 90
+    artistCorrects = XML.ElementFromURL(lastfm.ARTIST_CORRECTIONS % String.Quote(searchArtist, True)).xpath('//corrections/correction/artist') #[0]
+    #Log('length of artistCorrects: ' + str(len(artistCorrects)))
+    if len(artistCorrects) > 0:
+      url = artistCorrects[0].xpath('./url')[0].text
+      name = artistCorrects[0].xpath('./name')[0].text
+      self.scoreArtist(name, url, results, media, lang, maxDist, score)
     # Finally, de-dupe the results.
     results.Sort('score', descending=True)
     toWhack = []
@@ -84,6 +69,16 @@ class LastFmAgent(Agent.Artist):
         toWhack.append(result)
     for dupe in toWhack:
       results.Remove(dupe)
+  
+  def scoreArtist(self, name, url, results, media, lang, maxDist, score):
+    id = String.Quote(url.split('/')[-1].encode('utf-8')).replace('%2B','%20').replace('%25','%')
+    dist = Util.LevenshteinDistance(name.lower(), media.artist.lower())
+    if dist > maxDist: dist = maxDist
+    albumBonus = self.freebase_bonusArtistMatchUsingAlbums(media, name.lower(), id, maxBonus=10)
+    s = score + albumBonus - dist
+    Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus) + ' dist: ' + str(dist))
+    Log('artist result: id: ' + id + '  name: '+ name + '   score: ' + str(s))
+    results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = name, lang = lang, score = s))
     
   def freebase_bonusArtistMatchUsingAlbums(self, media, artist, lastFMid, maxBonus=5):
     mbid = getMusicBrainzID(lastFMid)
@@ -134,12 +129,16 @@ class LastFmAgent(Agent.Artist):
       metadata.summary = decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
     try:
       url = artist.xpath('//artist/image[@size="mega"]//text()')[0]
-      if url not in metadata.posters:
-        metadata.posters[url] = Proxy.Media(HTTP.Request(url))
     except:
-      url = artist.xpath('//artist/image[@size="extralarge"]//text()')[0]
-      if url not in metadata.posters:
-        metadata.posters[url] = Proxy.Media(HTTP.Request(url))     
+      try:
+        url = artist.xpath('//artist/image[@size="extralarge"]//text()')[0]
+      except:
+        try:
+          url = artist.xpath('//artist/image[@size="large"]//text()')[0]
+        except:
+          url = None
+    if url != None and url not in metadata.posters:
+      metadata.posters[url] = Proxy.Media(HTTP.Request(url))     
     metadata.genres.clear()
     for genre in artist.xpath('//artist/tags/tag/name'):
       metadata.genres.add(genre.text.capitalize())

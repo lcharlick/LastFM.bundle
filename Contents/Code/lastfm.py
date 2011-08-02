@@ -32,6 +32,7 @@ ARTIST_SIMILAR = API_BASE + "artist.getsimilar&artist=%s" + API_KEY
 ARTIST_TRACKS = API_BASE + "artist.gettoptracks&artist=%s" + API_KEY
 ARTIST_ALBUMS = API_BASE + "artist.gettopalbums&artist=%s&limit=10000" + API_KEY
 ARTIST_VIDEOS = "http://www.last.fm/music/%s/+videos?page=%d"
+ARTIST_CORRECTIONS = API_BASE + "artist.getcorrection&artist=%s" + API_KEY
 
 # Tag
 TOP_TAGS = API_BASE + "tag.gettoptags" + API_KEY
