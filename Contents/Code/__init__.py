@@ -9,10 +9,7 @@ class LastFmAgent(Agent.Artist):
   languages = [Locale.Language.English, Locale.Language.Korean]
   
   def safe_strip(self, ss):
-    """
-      This method strips the diacritic marks from a string, but if it's too extreme (i.e. would remove everything,
-      as is the case with some foreign text), then don't perform the strip.
-    """
+    # This method strips the diacritic marks from a string, but if it's too extreme (i.e. would remove everything, as is the case with some foreign text), then don't perform the strip.
     s = String.StripDiacritics(ss)
     if len(s.strip()) == 0:
       return ss
@@ -26,16 +23,21 @@ class LastFmAgent(Agent.Artist):
       results.Append(MetadataSearchResult(id = 'Various%20Artists', name= 'Various Artists', thumb = 'http://userserve-ak.last.fm/serve/252/46209667.png', lang  = lang, score = 100))
       return
     searchArtist = self.safe_strip(cleanSearchTerms(media.artist.lower()))
-    for r in lastfm.SearchArtists(searchArtist,limit=5)[0]:
-      url = r[0]
-      Log(url)
-      if url.find('+noredirect') == -1:
-        name = r[1]
-        self.scoreArtist(name, url, results, media, lang, maxDist, score)
-        score = score - 1
+    try:
+      artistSearch = XML.ElementFromURL(lastfm.SEARCH_ARTISTS % (String.Quote(searchArtist, True), 0, 5))[0]
+    except:
+      artistSearch = None
+    if artistSearch:
+      for a in artistSearch.xpath('//artist'):
+        url = a.xpath('./url')[0].text
+        if url.find('+noredirect') == -1:
+          name = a.xpath('./name')[0].text
+          self.scoreArtist(name, url, results, media, lang, maxDist, score)
+          score = score - 1
     #Let's get similar/artist infos...last.fm hides good stuff in here :)
     score = 90
     try:
+      Log(lastfm.ARTIST_INFO % String.Quote(searchArtist, True))
       artistInfo = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(searchArtist, True))[0]
     except:
       artistInfo = None
@@ -50,7 +52,7 @@ class LastFmAgent(Agent.Artist):
         url = a.xpath('./url')[0].text
         self.scoreArtist(name, url, results, media, lang, maxDist, score)
         score = score - 1
-    #See if there is a corrected artist for our spelling
+    #See if last.fm has a corrected artist for our spelling
     score = 90
     artistCorrects = XML.ElementFromURL(lastfm.ARTIST_CORRECTIONS % String.Quote(searchArtist, True)).xpath('//corrections/correction/artist') #[0]
     #Log('length of artistCorrects: ' + str(len(artistCorrects)))
@@ -78,7 +80,7 @@ class LastFmAgent(Agent.Artist):
     s = score + albumBonus - dist
     Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus) + ' dist: ' + str(dist))
     Log('artist result: id: ' + id + '  name: '+ name + '   score: ' + str(s))
-    results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = name, lang = lang, score = s))
+    results.Append(MetadataSearchResult(id = id.replace('%2B','%20').replace('%25','%'), name = name, lang = lang, score = s))
     
   def freebase_bonusArtistMatchUsingAlbums(self, media, artist, lastFMid, maxBonus=5):
     mbid = getMusicBrainzID(lastFMid)
@@ -94,7 +96,6 @@ class LastFmAgent(Agent.Artist):
       for a in result['album']:
         if a['name']:
           artistAlbums.append(a['name'].lower())
-          Log(a['name'])
         else:
           continue
       if len(artistAlbums) == 0: return 0 #no freebase albums for the artist, so abort!
@@ -124,7 +125,7 @@ class LastFmAgent(Agent.Artist):
     Log('artist update for: ' + metadata.id)
     artist = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
     summary = artist.xpath('//bio/content')[0]
-    metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
+    metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, False)
     if summary.text:
       metadata.summary = decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
     try:
@@ -146,12 +147,13 @@ class LastFmAgent(Agent.Artist):
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
   languages = [Locale.Language.English]
-  fallback_agent = 'com.plexapp.agents.allmusic'
+  fallback_agent = 'com.plexapp.agents.discogs' 
+  #fallback_agent = 'com.plexapp.agents.allmusic'
   def search(self, results, media, lang):
     if media.parent_metadata.id is None:
       return None
     #Log('album search for: ' + media.album)
-    if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
+    if media.parent_metadata.id == '[Unknown Artist]': return #eventually, we might be able to look at tracks to match the album
     if media.parent_metadata.id != 'Various%20Artists':
       for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
         (name, artist, thumb, url) = album
@@ -268,7 +270,7 @@ def cleanSearchTerms(string):
 
 def getMusicBrainzID(lastFMid):
   try:
-    mbid = XML.ElementFromURL(lastfm.ARTIST_INFO % lastFMid).xpath('//artist/mbid')[0].text 
+    mbid = XML.ElementFromURL(lastfm.ARTIST_INFO % lastFMid.replace('%2B','%20').replace('%25','%')).xpath('//artist/mbid')[0].text 
   except:
     mbid = None
   return mbid
