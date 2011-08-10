@@ -75,7 +75,12 @@ class LastFmAgent(Agent.Artist):
   def scoreArtist(self, name, url, results, media, lang, maxDist, score):
     id = String.Quote(url.split('/')[-1].encode('utf-8')).replace('%2B','%20').replace('%25','%')
     dist = Util.LevenshteinDistance(name.lower(), media.artist.lower())
-    if dist > maxDist: dist = maxDist
+    if dist > maxDist: 
+      dist = maxDist
+    lcs = len(Util.LongestCommonSubstring(name.lower(), media.artist.lower()))
+    # If we don't have at least X% in common, then penalize the score
+    if (float(lcs) / len(media.album)) < .15: 
+      dist = maxDist
     albumBonus = self.freebase_bonusArtistMatchUsingAlbums(media, name.lower(), id, maxBonus=10)
     s = score + albumBonus - dist
     Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus) + ' dist: ' + str(dist))
