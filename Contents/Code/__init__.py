@@ -73,6 +73,8 @@ class LastFmAgent(Agent.Artist):
       results.Remove(dupe)
   
   def scoreArtist(self, name, url, results, media, lang, maxDist, score):
+    if media.album == None or media.album == '': #don't both with this if the album is blank/None
+      return 
     id = String.Quote(url.split('/')[-1].encode('utf-8')).replace('%2B','%20').replace('%25','%')
     dist = Util.LevenshteinDistance(name.lower(), media.artist.lower())
     if dist > maxDist: 
