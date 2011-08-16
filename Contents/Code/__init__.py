@@ -95,7 +95,7 @@ class LastFmAgent(Agent.Artist):
       query = getMQL(artist=None, musicBrainzID=mbid)
     else:
       query = getMQL(artist)
-    freebase = metaweb.Session("api.freebase.com") # Create a session object
+    freebase = metaweb.Session("freebase-cache.plexapp.com") # Create a session object
     result = freebase.read(query)                  # Submit query, get results
     #Log(result)
     if result:                                     # If we got a result
