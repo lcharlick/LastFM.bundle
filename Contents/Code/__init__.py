@@ -21,25 +21,23 @@ class LastFmAgent(Agent.Artist):
     return s
     
   def search(self, results, media, lang):
-    score = 90
-    if media.artist == '[Unknown Artist]': return
+    if media.artist == '[Unknown Artist]': 
+      return
+      
     if media.artist == 'Various Artists':
       results.Append(MetadataSearchResult(id = 'Various%20Artists', name= 'Various Artists', thumb = 'http://userserve-ak.last.fm/serve/252/46209667.png', lang  = lang, score = 100))
       return
-    for r in lastfm.SearchArtists(self.safe_strip(media.artist.lower()),limit=5)[0]:
-      id = r[0]
-      if id.find('+noredirect') == -1:
-        id = r[1]
-        dist = Util.LevenshteinDistance(r[1].lower(), media.artist.lower())
-        albumBonus = self.bonusArtistMatchUsingAlbums(media, artistID=id, maxBonus=5)
-        Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus))
-        id = String.Quote(id.encode('utf-8'))
-        Log('Artist result: id: ' + id + '  name: '+ r[1] + '   score: ' + str(score) + '   thumb: ' + str(r[2]))
-        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = r[1], thumb = r[2], lang  = lang, score = score + albumBonus - dist))
-        score = score - 2
-      else:
-        pass
-        #Log('************************REDIRECT****************')
+    
+    # Search for artist.
+    artist = self.safe_strip(media.artist.lower())
+    try: self.findArtists(lang, results, media, artist)
+    except: raise
+    
+    # If the artist starts with "The", try stripping.
+    if artist.startswith('the '):
+      try: self.findArtists(lang, results, media, artist[4:])
+      except: raise
+  
     # Finally, de-dupe the results.
     toWhack = []
     resultMap = {}
@@ -50,7 +48,30 @@ class LastFmAgent(Agent.Artist):
         toWhack.append(result)
     for dupe in toWhack:
       results.Remove(dupe)
-  
+
+  def findArtists(self, lang, results, media, artist):
+    score = 90
+    for r in lastfm.SearchArtists(artist,limit=5)[0]:
+      id = r[0]
+      if id.find('+noredirect') == -1:
+        id = r[1]
+        dist = Util.LevenshteinDistance(r[1].lower(), media.artist.lower())
+        albumBonus = self.bonusArtistMatchUsingAlbums(media, artistID=id, maxBonus=5)
+        id = String.Quote(id.encode('utf-8'))
+        Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus))
+        Log('Artist result: ' + r[1] + ' id: ' + id + ' score: ' + str(score) + ' thumb: ' + str(r[2]))
+        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = r[1], thumb = r[2], lang  = lang, score = score + albumBonus - dist))
+      else:
+        # Get a correction.
+        Log('Getting correction to artist.')
+        correctArtists = lastfm.CorrectedArtists(artist)
+        for result in correctArtists:
+          id = String.Quote(result[0].encode('utf-8'))
+          dist = Util.LevenshteinDistance(result[0].lower(), media.artist.lower())
+          results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = result[0], lang  = lang, score = score - dist))
+          
+      score = score - 2
+      
   def bonusArtistMatchUsingAlbums(self, media, artistID, maxBonus=5):
     Log('bonusArtistMatchUsingAlbums')
     lastFM_artistAlbums = []
@@ -183,7 +204,8 @@ class LastFmAlbumAgent(Agent.Album):
     if len(date) > 0:
       metadata.originally_available_at = Datetime.ParseDate(date).date()
     if thumb not in metadata.posters and thumb != None:
-      metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
+      try: metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
+      except: Log('Error getting poster from %s' % thumb)
     #tracks = lastfm.AlbumTrackList(artistName, albumName)
     #for num in range(len(tracks)):
     #  pass
