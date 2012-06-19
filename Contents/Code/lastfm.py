@@ -28,10 +28,12 @@ PLAYLIST_FETCH = API_BASE + "playlist.fetch&playlistURL=%s" + API_KEY
 # Artists
 USER_RECOMMENDED_ARTISTS = API_BASE + "user.getRecommendedArtists" + API_KEY + "&api_sig=%s&sk=%s"
 ARTIST_INFO = API_BASE + "artist.getinfo&artist=%s" + API_KEY
+ARTIST_CORRECTION = API_BASE + "artist.getcorrection&artist=%s" + API_KEY
 ARTIST_SIMILAR = API_BASE + "artist.getsimilar&artist=%s" + API_KEY
 ARTIST_TRACKS = API_BASE + "artist.gettoptracks&artist=%s" + API_KEY
 ARTIST_ALBUMS = API_BASE + "artist.gettopalbums&artist=%s&limit=10000" + API_KEY
 ARTIST_VIDEOS = "http://www.last.fm/music/%s/+videos?page=%d"
+
 
 # Tag
 TOP_TAGS = API_BASE + "tag.gettoptags" + API_KEY
@@ -409,6 +411,17 @@ def SimilarArtists(artistName):
             artist = (name, image)
             artists.append(artist)
         return artists
+        
+########################################
+def CorrectedArtists(artistName):
+  artists = []
+  url = ARTIST_CORRECTION % String.Quote(artistName.encode('utf-8'), True)
+  for artistElement in XML.ElementFromURL(url).xpath('/lfm/corrections/correction/artist'):
+    name = artistElement.xpath("name")[0].text
+    url = artistElement.xpath('url')[0].text
+    artist = (name, url)
+    artists.append(artist)
+  return artists
     
 ########################################
 def ArtistAlbums(artistName):
@@ -613,4 +626,3 @@ class Radio:
             duration = int(trackItem.xpath('xspf:duration', namespaces=XSPF_NAMESPACE)[0].text)
             track = (title, artist, image, location, duration)
             self.playList.insert(0, track)
-    
