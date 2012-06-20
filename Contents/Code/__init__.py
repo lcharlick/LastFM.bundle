@@ -31,12 +31,12 @@ class LastFmAgent(Agent.Artist):
     # Search for artist.
     artist = self.safe_strip(media.artist.lower())
     try: self.findArtists(lang, results, media, artist)
-    except: raise
+    except: pass
     
     # If the artist starts with "The", try stripping.
     if artist.startswith('the '):
       try: self.findArtists(lang, results, media, artist[4:])
-      except: raise
+      except: pass
   
     # Finally, de-dupe the results.
     toWhack = []
