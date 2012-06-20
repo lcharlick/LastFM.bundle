@@ -1,11 +1,24 @@
-import lastfm, re
+import lastfm, re, time
 
 GOOGLE_JSON = 'http://ajax.googleapis.com/ajax/services/search/web?v=1.0&rsz=large&q=%s+site:last.fm+inurl:music'
 BING_JSON   = 'http://api.bing.net/json.aspx?AppId=879000C53DA17EA8DB4CD1B103C00243FD0EFEE8&Version=2.2&Query=%s+site:last.fm&Sources=web&Web.Count=8&JsonType=raw'
 
 def Start():
   HTTP.CacheTime = CACHE_1WEEK
-  
+
+def CallWithRetries(fun, *args):
+  tries = 3
+  while tries > 0:
+    try:
+      return fun(*args)
+    except:
+      tries = tries - 1
+      if tries > 0:
+        Log('Call failed, retrying')
+        time.sleep(2)
+      else:
+        raise
+
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
   languages = [Locale.Language.English, Locale.Language.Korean]
@@ -30,13 +43,11 @@ class LastFmAgent(Agent.Artist):
     
     # Search for artist.
     artist = self.safe_strip(media.artist.lower())
-    try: self.findArtists(lang, results, media, artist)
-    except: pass
+    CallWithRetries(self.findArtists, lang, results, media, artist)
     
     # If the artist starts with "The", try stripping.
     if artist.startswith('the '):
-      try: self.findArtists(lang, results, media, artist[4:])
-      except: pass
+      CallWithRetries(self.findArtists, lang, results, media, artist[4:])
   
     # Finally, de-dupe the results.
     toWhack = []
@@ -99,8 +110,7 @@ class LastFmAgent(Agent.Artist):
     return bonus
     
   def update(self, metadata, media, lang):
-    #Log('artist update for: ' + metadata.id)
-    artist = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
+    artist = CallWithRetries(XML.ElementFromURL, lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
     summary = artist.xpath('//bio/content')[0]
     metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
     if summary.text:
@@ -125,7 +135,7 @@ class LastFmAlbumAgent(Agent.Album):
     #Log('album search for: ' + media.album)
     if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
     if media.parent_metadata.id != 'Various%20Artists':
-      for album in lastfm.ArtistAlbums(String.Unquote(media.parent_metadata.id)):
+      for album in CallWithRetries(lastfm.ArtistAlbums, String.Unquote(media.parent_metadata.id)):
         (name, artist, thumb, url) = album
         albumID = url.split('/')[-1]
         id = '/'.join(url.split('/')[-2:]).replace('+','%20')
@@ -137,7 +147,7 @@ class LastFmAlbumAgent(Agent.Album):
         #Log('scannerAlbum: ' + media.album + ' last.fmAlbum: ' + name + ' score=' + str(92-dist))
         results.Append(MetadataSearchResult(id = id.replace('%2B','%20').replace('%25','%'), name = name, thumb = thumb, lang  = lang, score = 92-dist))
     else:
-      (albums, more) = lastfm.SearchAlbums(media.title.lower())
+      (albums, more) = CallWithRetries(lastfm.SearchAlbums, media.title.lower())
       for album in albums:
         (name, artist, thumb, url) = album
         if artist == 'Various Artists':
@@ -189,7 +199,7 @@ class LastFmAlbumAgent(Agent.Album):
   def update(self, metadata, media, lang):
     (artistName, albumName) = self.artistAlbumFromID(metadata.id)
     #Log('Album update for: ' + albumName)
-    album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
+    album = CallWithRetries(XML.ElementFromURL, lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
     try: 
       thumb = album.xpath("//image[@size='mega']")[0].text
     except: 
@@ -206,10 +216,6 @@ class LastFmAlbumAgent(Agent.Album):
     if thumb not in metadata.posters and thumb != None:
       try: metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
       except: Log('Error getting poster from %s' % thumb)
-    #tracks = lastfm.AlbumTrackList(artistName, albumName)
-    #for num in range(len(tracks)):
-    #  pass
-      #metadata.tracks[str(num+1)].name = tracks[num][0]
 
 def decodeXml(text):
   trans = [('&amp;','&'),('&quot;','"'),('&lt;','<'),('&gt;','>'),('&apos;','\''),('\n ','\n')]
