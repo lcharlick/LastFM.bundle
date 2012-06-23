@@ -48,6 +48,15 @@ class LastFmAgent(Agent.Artist):
     # If the artist starts with "The", try stripping.
     if artist.startswith('the '):
       CallWithRetries(self.findArtists, lang, results, media, artist[4:])
+      
+    # If the artist has an '&', try with 'and'.
+    if artist.find(' & '):
+      CallWithRetries(self.findArtists, lang, results, media, artist.replace(' & ', ' and '))
+
+    # If the artist has an 'and', try with '&'.
+    if artist.find(' and '):
+      CallWithRetries(self.findArtists, lang, results, media, artist.replace(' and ', ' & '))
+
   
     # Finally, de-dupe the results.
     toWhack = []
