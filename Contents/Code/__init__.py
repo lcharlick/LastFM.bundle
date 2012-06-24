@@ -1,10 +1,27 @@
 import lastfm, re, time
 
-GOOGLE_JSON = 'http://ajax.googleapis.com/ajax/services/search/web?v=1.0&rsz=large&q=%s+site:last.fm+inurl:music'
-BING_JSON   = 'http://api.bing.net/json.aspx?AppId=879000C53DA17EA8DB4CD1B103C00243FD0EFEE8&Version=2.2&Query=%s+site:last.fm&Sources=web&Web.Count=8&JsonType=raw'
+GOOGLE_JSON = 'http://ajax.googleapis.com/ajax/services/search/web?v=1.0&userip=%s&rsz=large&q=%s+site:last.fm+inurl:music'
 
 def Start():
   HTTP.CacheTime = CACHE_1WEEK
+
+def GetPublicIP():
+  return HTTP.Request('http://plexapp.com/ip.php').content.strip()
+
+def GetGoogleArtist(artist):
+  try:
+    url = GOOGLE_JSON % (GetPublicIP(), String.Quote(artist.encode('utf-8'), usePlus=True))
+    jsonObj = JSON.ObjectFromURL(url, headers={'Referer' : 'http://www.plexapp.com'}, sleep=0.5)
+    if jsonObj['responseData'] != None:
+      jsonObj = jsonObj['responseData']['results']
+      if len(jsonObj) > 0:
+        result = jsonObj[0]
+        url = result['unescapedUrl']
+        return re.findall('/music/([^/]+)', url)[0]
+  except:
+    pass
+  
+  return None
 
 def CallWithRetries(fun, *args):
   tries = 3
@@ -47,16 +64,30 @@ class LastFmAgent(Agent.Artist):
     
     # If the artist starts with "The", try stripping.
     if artist.startswith('the '):
-      CallWithRetries(self.findArtists, lang, results, media, artist[4:])
+      try: CallWithRetries(self.findArtists, lang, results, media, artist[4:])
+      except: pass
       
     # If the artist has an '&', try with 'and'.
-    if artist.find(' & '):
-      CallWithRetries(self.findArtists, lang, results, media, artist.replace(' & ', ' and '))
+    if artist.find(' & ') != -1:
+      try: CallWithRetries(self.findArtists, lang, results, media, artist.replace(' & ', ' and '))
+      except: pass
 
     # If the artist has an 'and', try with '&'.
-    if artist.find(' and '):
-      CallWithRetries(self.findArtists, lang, results, media, artist.replace(' and ', ' & '))
-
+    if artist.find(' and ') != -1:
+      try: CallWithRetries(self.findArtists, lang, results, media, artist.replace(' and ', ' & '))
+      except: pass
+      
+    try: highest_score = max([x.score for x in results])
+    except: highest_score = 0
+      
+    if len(results) == 0 or highest_score < 85:
+      artist_id = GetGoogleArtist(artist)
+      google_artist = CallWithRetries(lastfm.ArtistInfo, artist_id)
+      if google_artist:
+        Log("Google said 'try %s'." % artist_id)
+        (url, name, image, listeners) = google_artist
+        if listeners > 250:
+          results.Append(MetadataSearchResult(id=artist_id, name=name, thumb=image, lang=lang, score = 100-Util.LevenshteinDistance(name.lower(), media.artist.lower())))
   
     # Finally, de-dupe the results.
     toWhack = []
@@ -73,6 +104,12 @@ class LastFmAgent(Agent.Artist):
     score = 90
     for r in lastfm.SearchArtists(artist,limit=5)[0]:
       id = r[0]
+
+      # Skip artists without many listeners, they're probanly wrong.
+      if r[3] < 1000 and id.find('+noredirect') == -1:
+        Log("Skipping %s with only %d listeners." % (r[1], r[3]))
+        continue
+        
       if id.find('+noredirect') == -1:
         id = r[1]
         dist = Util.LevenshteinDistance(r[1].lower(), media.artist.lower())
@@ -88,7 +125,7 @@ class LastFmAgent(Agent.Artist):
         for result in correctArtists:
           id = String.Quote(result[0].encode('utf-8'))
           dist = Util.LevenshteinDistance(result[0].lower(), media.artist.lower())
-          results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = result[0], lang  = lang, score = score - dist))
+          results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = result[0], lang  = lang, score = score - dist + 5))
           
       score = score - 2
       

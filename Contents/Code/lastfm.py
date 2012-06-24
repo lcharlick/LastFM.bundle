@@ -132,8 +132,10 @@ def SearchArtists(query, page=0, URLEncode = True, limit=10):
   for item in content.xpath('//lfm/results/artistmatches/artist'):
     url = item.xpath('url')[0].text
     name = item.xpath('name')[0].text
+    try: listeners = int(item.xpath('listeners')[0].text)
+    except: listeners = 0
     image = Image(item)
-    artist = (url, name, image)
+    artist = (url, name, image, listeners)
     artists.append(artist)
     
   #total = int(content.xpath("//lfm/results/opensearch:totalResults", namespaces=SEARCH_NAMESPACE)[0].text)
@@ -411,6 +413,19 @@ def SimilarArtists(artistName):
             artist = (name, image)
             artists.append(artist)
         return artists
+
+########################################
+def ArtistInfo(artistID):
+  url = ARTIST_INFO % artistID
+  artist = XML.ElementFromURL(url)
+  
+  name = artist.xpath('/lfm/artist/name')[0].text
+  image = Image(artist.xpath('/lfm/artist')[0])
+  url = artist.xpath('/lfm/artist/url')[0].text
+  try: listeners = artist.xpath('/lfm/artist/stats/listeners')[0].text
+  except: listeners = 0
+
+  return (url, name, image, listeners)
         
 ########################################
 def CorrectedArtists(artistName):
@@ -483,7 +498,9 @@ def PlayCount(element):
     
 ##########################################
 def Image(item):
-    imageItems = item.xpath('image[@size="extralarge"]')
+    imageItems = item.xpath('image[@size="mega"]')
+    if len(imageItems) == 0:
+        imageItems = item.xpath('image[@size="extralarge"]')
     if len(imageItems) == 0:
         imageItems = item.xpath('image[@size="large"]')
     if len(imageItems) == 0:
