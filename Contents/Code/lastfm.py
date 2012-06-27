@@ -419,7 +419,7 @@ def ArtistInfo(artistID):
   url = ARTIST_INFO % artistID
   artist = XML.ElementFromURL(url)
   
-  name = artist.xpath('/lfm/artist/name')[0].text
+  name = String.Unquote(artist.xpath('/lfm/artist/name')[0].text)
   image = Image(artist.xpath('/lfm/artist')[0])
   url = artist.xpath('/lfm/artist/url')[0].text
   try: listeners = artist.xpath('/lfm/artist/stats/listeners')[0].text

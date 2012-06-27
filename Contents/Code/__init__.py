@@ -16,7 +16,7 @@ def GetGoogleArtist(artist):
       jsonObj = jsonObj['responseData']['results']
       if len(jsonObj) > 0:
         result = jsonObj[0]
-        url = result['unescapedUrl']
+        url = result['unescapedUrl'].replace('+','%20')
         return re.findall('/music/([^/]+)', url)[0]
   except:
     pass
@@ -84,8 +84,8 @@ class LastFmAgent(Agent.Artist):
       artist_id = GetGoogleArtist(artist)
       google_artist = CallWithRetries(lastfm.ArtistInfo, artist_id)
       if google_artist:
-        Log("Google said 'try %s'." % artist_id)
         (url, name, image, listeners) = google_artist
+        Log("Google said 'you should try %s' (ID: %s)." % (name, artist_id))
         if listeners > 250:
           results.Append(MetadataSearchResult(id=artist_id, name=name, thumb=image, lang=lang, score = 100-Util.LevenshteinDistance(name.lower(), media.artist.lower())))
   
