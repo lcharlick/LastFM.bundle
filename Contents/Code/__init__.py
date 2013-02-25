@@ -131,7 +131,7 @@ class LastFmAgent(Agent.Artist):
       for image in artist['image']:
         if image['#text'] and image['size']:
           valid_names.append(image['#text'])
-          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size']))
+          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
       metadata.posters.validate_keys(valid_names)
     except:
       Log('Error adding artwork for artist.')
@@ -258,7 +258,7 @@ class LastFmAlbumAgent(Agent.Album):
       for image in album['image']:
         if image['#text'] and image['size']:
           valid_names.append(image['#text'])
-          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size']))
+          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
       metadata.posters.validate_keys(valid_names)
     except:
       Log('Error adding artwork for album.')
