@@ -284,12 +284,12 @@ def SearchArtists(artist, limit=10):
     response = GetJSON(ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit))
     if response.has_key('error'):
       Log('Error retrieving artist search results: ' + response['message'])
-      return {}
+      return []
     else:
       artist_results = response['results']
     if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
       Log('No results for artist search.')
-      return {}
+      return []
     # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
     if not isinstance(artist_results['artistmatches']['artist'], list):
       artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
@@ -305,12 +305,12 @@ def SearchAlbums(album, limit=10):
     response = GetJSON(ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit))
     if response.has_key('error'):
       Log('Error retrieving album search results: ' + response['message'])
-      return {}
+      return []
     else:
       album_results = response['results']
     if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
       Log('No results for artist search.')
-      return {}
+      return []
     # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
     if not isinstance(album_results['albummatches']['album'], list):
       album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
