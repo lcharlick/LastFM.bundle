@@ -1,56 +1,61 @@
-import lastfm, re, time
+# Rewrite (use JSON API, other matching tweaks) by ToMM
 
-GOOGLE_JSON = 'http://ajax.googleapis.com/ajax/services/search/web?v=1.0&userip=%s&rsz=large&q=%s+site:last.fm+inurl:music'
+# TODO: Dedupe and don't add lower quality artwork artwork.
+
+import time
+
+# Last.fm API
+API_KEY = 'd5310352469c2631e5976d0f4a599773'
+
+# BASE_URL = 'http://ws.audioscrobbler.com/2.0/'
+BASE_URL = 'http://lastfm.plexapp.com/2.0/'
+
+ARTIST_SEARCH_URL = BASE_URL + '?method=artist.search&artist=%s&limit=%s&format=json&api_key=' + API_KEY
+ARTIST_ALBUM_SEARCH_URL = BASE_URL + '?method=artist.gettopalbums&artist=%s&page=%s&limit=%s&format=json&api_key=' + API_KEY
+ARTIST_INFO_URL = BASE_URL + '?method=artist.getInfo&artist=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
+
+ALBUM_SEARCH_URL = BASE_URL + '?method=album.search&album=%s&limit=%s&format=json&api_key=' + API_KEY
+ALBUM_INFO_URL = BASE_URL + '?method=album.getInfo&artist=%s&album=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
+
+ARTWORK_SIZE_RANKING = ['mega','extralarge','large','medium','small']
+
+# Tunables.
+ARTIST_MATCH_LIMIT = 9 # Max number of artists to fetch for matching purposes.
+ARTIST_ALBUMS_MATCH_LIMIT = 5 # Max number of artist matches to try for album bonus.  Each one incurs an additional API request.
+ARTIST_ALBUMS_LIMIT = 100 # How many albums do we want to grab for artist album matching bonus.
+ARTIST_MIN_LISTENER_THRESHOLD = 1000 # Minimum number of listeners for an artist to be considered credible.
+ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album searches with no artist info (e.g. Various Artists).
+ALBUM_TRACK_BONUS_MATCH_LIMIT = 5 # Max number of albums to try for track bonus.  Each one incurs at most one API request per album.
+QUERY_SLEEP_TIME = 0.5 # How long to sleep before firing off each API request.
+REQUEST_RETRY_LIMIT = 3 # Number of times to retry failing API requests.
+REQUEST_RETRY_SLEEP_TIME = 5 # Number of seconds to sleep between failing API requests.
+
+# Advanced tunables.
+NAME_DISTANCE_THRESHOLD = 2 # How close do album/track names need to be to match for bonuses?
+ARTIST_INITIAL_SCORE = 90 # Starting point for artists before bonus/deductions.
+ARTIST_ALBUM_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good artist/album match.
+ARTIST_ALBUM_MAX_BONUS = 15 # Maximum number of bonus points to give artists with good album matches.
+ALBUM_INITIAL_SCORE = 92 # Starting point for albums before bonus/deductions.
+ALBUM_TRACK_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good album/track match.
+ALBUM_TRACK_MAX_BONUS = 20 # Maximum number of bonus points to give to albums with good track name matches.
+ALBUM_TRACK_NUM_DISTANCE_THRESHOLD = 2 # How close does the ordering need to match to get additional track order bonus.
+ALBUM_NUM_TRACKS_BONUS = 5 # How much to boost the bonus if the total number of tracks match.
+
+RE_STRIP_PARENS = Regex('\([^)]*\)')
 
 def Start():
   HTTP.CacheTime = CACHE_1WEEK
 
-def GetPublicIP():
-  return HTTP.Request('http://plexapp.com/ip.php').content.strip()
-
-def GetGoogleArtist(artist):
-  try:
-    url = GOOGLE_JSON % (GetPublicIP(), String.Quote(artist.encode('utf-8'), usePlus=True))
-    jsonObj = JSON.ObjectFromURL(url, headers={'Referer' : 'http://www.plexapp.com'}, sleep=0.5)
-    if jsonObj['responseData'] != None:
-      jsonObj = jsonObj['responseData']['results']
-      if len(jsonObj) > 0:
-        result = jsonObj[0]
-        url = result['unescapedUrl'].replace('+','%20')
-        return re.findall('/music/([^/]+)', url)[0]
-  except:
-    pass
-  
-  return None
-
-def CallWithRetries(fun, *args):
-  tries = 3
-  while tries > 0:
-    try:
-      return fun(*args)
-    except:
-      tries = tries - 1
-      if tries > 0:
-        Log('Call failed, retrying')
-        time.sleep(2)
-      else:
-        raise
-
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
-  languages = [Locale.Language.English, Locale.Language.Korean]
+  #languages = [Locale.Language.English, Locale.Language.Korean]
+  languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
+               Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
+               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean]
   
-  def safe_strip(self, ss):
-    """
-      This method strips the diacritic marks from a string, but if it's too extreme (i.e. would remove everything,
-      as is the case with some foreign text), then don't perform the strip.
-    """
-    s = String.StripDiacritics(ss)
-    if len(s.strip()) == 0:
-      return ss
-    return s
-    
   def search(self, results, media, lang):
+
+    # Handle a couple of edge cases where artist search will give bad results.
     if media.artist == '[Unknown Artist]': 
       return
       
@@ -59,212 +64,322 @@ class LastFmAgent(Agent.Artist):
       return
     
     # Search for artist.
-    artist = self.safe_strip(media.artist.lower())
-    CallWithRetries(self.findArtists, lang, results, media, artist)
-    
-    # If the artist starts with "The", try stripping.
-    if artist.startswith('the '):
-      try: CallWithRetries(self.findArtists, lang, results, media, artist[4:])
-      except: pass
-      
-    # If the artist has an '&', try with 'and'.
-    if artist.find(' & ') != -1:
-      try: CallWithRetries(self.findArtists, lang, results, media, artist.replace(' & ', ' and '))
-      except: pass
+    Log('Artist search: ' + media.artist)
+    artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
 
-    # If the artist has an 'and', try with '&'.
-    if artist.find(' and ') != -1:
-      try: CallWithRetries(self.findArtists, lang, results, media, artist.replace(' and ', ' & '))
-      except: pass
+    for i, artist in enumerate(artists):
       
-    try: highest_score = max([x.score for x in results])
-    except: highest_score = 0
-      
-    if len(results) == 0 or highest_score < 85:
-      artist_id = GetGoogleArtist(artist)
-      google_artist = CallWithRetries(lastfm.ArtistInfo, artist_id)
-      if google_artist:
-        (url, name, image, listeners) = google_artist
-        Log("Google said 'you should try %s' (ID: %s)." % (name, artist_id))
-        if listeners > 250:
-          results.Append(MetadataSearchResult(id=artist_id, name=name, thumb=image, lang=lang, score = 100-Util.LevenshteinDistance(name.lower(), media.artist.lower())))
-  
-    # Finally, de-dupe the results.
-    toWhack = []
-    resultMap = {}
-    for result in results:
-      if not resultMap.has_key(result.id):
-        resultMap[result.id] = True
-      else:
-        toWhack.append(result)
-    for dupe in toWhack:
-      results.Remove(dupe)
-
-  def findArtists(self, lang, results, media, artist):
-    score = 90
-    for r in lastfm.SearchArtists(artist,limit=5)[0]:
-      id = r[0]
-
-      # Skip artists without many listeners, they're probanly wrong.
-      if r[3] < 1000 and id.find('+noredirect') == -1:
-        Log("Skipping %s with only %d listeners." % (r[1], r[3]))
+      # If there's only a single result, it will not include the 'listeners' key.
+      # Distrust artists with fewer than N listeners.
+      if artist.has_key('listeners') and artist['listeners'] < ARTIST_MIN_LISTENER_THRESHOLD:
         continue
-        
-      if id.find('+noredirect') == -1:
-        id = r[1]
-        dist = Util.LevenshteinDistance(r[1].lower(), media.artist.lower())
-        albumBonus = self.bonusArtistMatchUsingAlbums(media, artistID=id, maxBonus=5)
-        id = String.Quote(id.encode('utf-8'))
-        Log('artist: ' + media.artist + ' albumBonus: ' + str(albumBonus))
-        Log('Artist result: ' + r[1] + ' id: ' + id + ' score: ' + str(score) + ' thumb: ' + str(r[2]))
-        results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = r[1], thumb = r[2], lang  = lang, score = score + albumBonus - dist))
+
+      id = String.Quote(artist['name'])
+      # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance and order.
+      dist = Util.LevenshteinDistance(artist['name'].lower(), media.artist.lower())
+      if i < ARTIST_ALBUMS_MATCH_LIMIT:
+        bonus = self.get_album_bonus(media, artist_id=id)
       else:
-        # Get a correction.
-        Log('Getting correction to artist.')
-        correctArtists = lastfm.CorrectedArtists(artist)
-        for result in correctArtists:
-          id = String.Quote(result[0].encode('utf-8'))
-          dist = Util.LevenshteinDistance(result[0].lower(), media.artist.lower())
-          results.Append(MetadataSearchResult(id = id.replace('%2B','%20'), name = result[0], lang  = lang, score = score - dist + 5))
-          
-      score = score - 2
-      
-  def bonusArtistMatchUsingAlbums(self, media, artistID, maxBonus=5):
-    Log('bonusArtistMatchUsingAlbums')
-    lastFM_artistAlbums = []
-    for album in lastfm.ArtistAlbums(artistID):
-      (name, artist, thumb, url) = album
-      lastFM_artistAlbums.append(name.lower())
-    if len(lastFM_artistAlbums) == 0: return 0 #no last.fm albums for the artist, so abort!
+        bonus = 0
+      score = ARTIST_INITIAL_SCORE + bonus - dist - (i * 2)
+      name = artist['name']
+      Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' score: ' + str(score))
+      results.Append(MetadataSearchResult(id = id, name = name, lang  = lang, score = score))
+
+
+  def get_album_bonus(self, media, artist_id):
+    Log('Fetching artist\'s albums and applying album bonus.')
     bonus = 0
-    for a in media.children:
-      album = a.title.lower()
-      for lfa in lastFM_artistAlbums:
-        score = Util.LevenshteinDistance(lfa, album)
-        #Log(lfa, album, score)
-        if score <= 2: #pretty solid match
-          bonus += 1
-          if bonus == maxBonus: break
-      if bonus == 0 and album[-1:] == ')': #if we got nothing, let's try again without anything in paranthesis [e.g.'limited edition'] 
-        album = album[:album.rfind('(')].strip()
-        for lfa in lastFM_artistAlbums:
-          score = Util.LevenshteinDistance(lfa, album)
-          #Log(lfa, album, score)
-          if score <= 2: #pretty solid match
-            bonus += 1
-            if bonus == maxBonus: break
-    return bonus
-    
-  def update(self, metadata, media, lang):
-    artist = CallWithRetries(XML.ElementFromURL, lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
-    summary = artist.xpath('//bio/content')[0]
-    metadata.title = String.Unquote(artist.xpath('//artist/name')[0].text, True)
-    if summary.text:
-      metadata.summary = decodeXml(re.sub(r'<[^<>]+>', '', summary.text))
+    albums = GetAlbumsByArtist(artist_id, limit=ARTIST_ALBUMS_LIMIT)
     try:
-      url = artist.xpath('//artist/image[@size="mega"]//text()')[0]
-      if url not in metadata.posters:
-        metadata.posters[url] = Proxy.Media(HTTP.Request(url))
+      for a in media.children:
+        media_album = a.title.lower()
+        for album in albums:
+          if Util.LevenshteinDistance(media_album,album['name'].lower()) <= NAME_DISTANCE_THRESHOLD:
+            bonus += ARTIST_ALBUM_BONUS_INCREMENT
+          # This is a cheap comparison, so let's try again with the contents of parentheses removed, e.g. "(limited edition)"
+          elif Util.LevenshteinDistance(media_album,RE_STRIP_PARENS.sub('',album['name'].lower())) <= NAME_DISTANCE_THRESHOLD:
+            bonus += ARTIST_ALBUM_BONUS_INCREMENT
+          if bonus >= ARTIST_ALBUM_MAX_BONUS:
+            break
     except:
-      pass     
-    metadata.genres.clear()
-    for genre in artist.xpath('//artist/tags/tag/name'):
-      metadata.genres.add(genre.text.capitalize())
+      Log('Didn\'t find usable albums in search results, not applying artist album bonus.')
+      raise
+    if bonus > 0:
+      Log('Applying album bonus of: ' + str(bonus))
+    return bonus
+  
+
+  def update(self, metadata, media, lang):
+    try:
+      artist = GetJSON(ARTIST_INFO_URL % (String.Quote(String.Unquote(metadata.id)), lang))['artist']
+      if artist.has_key('error'):
+        Log('Error retrieving artist metadata: ' + artist['message'])
+    except:
+      Log('Error retrieving artist metadata.')
+      return
+
+    # Name.
+    metadata.title = artist['name']
+
+    # Bio.
+    metadata.summary = String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip()
     
+    # Artwork.
+    try:
+      valid_names = list()
+      for image in artist['image']:
+        if image['#text'] and image['size']:
+          valid_names.append(image['#text'])
+          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size']))
+      metadata.posters.validate_keys(valid_names)
+    except:
+      Log('Error adding artwork for artist.')
+      raise
+
+    # Genres.
+    try:
+      metadata.genres.clear()
+      if isinstance(artist['tags'], dict) and artist['tags'].has_key('tag') and len(artist['tags']['tag']) > 0:
+        for genre in artist['tags']['tag']:
+          metadata.genres.add(genre['name'].capitalize())
+    except:
+      Log('Error adding genre tags for artist.')
+
+  
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
-  languages = [Locale.Language.English]
+  #languages = [Locale.Language.English]
+  languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
+               Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
+               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean]
   fallback_agent = 'com.plexapp.agents.allmusic'
-  def search(self, results, media, lang):
-    if media.parent_metadata.id is None:
-      return None
-    #Log('album search for: ' + media.album)
-    if media.parent_metadata.id == '[Unknown Album]': return #eventually, we might be able to look at tracks to match the album
-    if media.parent_metadata.id != 'Various%20Artists':
-      for album in CallWithRetries(lastfm.ArtistAlbums, String.Unquote(media.parent_metadata.id)):
-        (name, artist, thumb, url) = album
-        albumID = url.split('/')[-1]
-        id = '/'.join(url.split('/')[-2:]).replace('+','%20')
-        dist = Util.LevenshteinDistance(name.lower(), media.album.lower())
-        # Sanity check to make sure we have SOME common substring.
-        longestCommonSubstring = len(Util.LongestCommonSubstring(name.lower(), media.album.lower()))
-        # If we don't have at least X% in common, then penalize the score
-        if (float(longestCommonSubstring) / len(media.album)) < .15: dist = dist + 10
-        #Log('scannerAlbum: ' + media.album + ' last.fmAlbum: ' + name + ' score=' + str(92-dist))
-        results.Append(MetadataSearchResult(id = id.replace('%2B','%20').replace('%25','%'), name = name, thumb = thumb, lang  = lang, score = 92-dist))
-    else:
-      (albums, more) = CallWithRetries(lastfm.SearchAlbums, media.title.lower())
-      for album in albums:
-        (name, artist, thumb, url) = album
-        if artist == 'Various Artists':
-          albumID = url.split('/')[-1]
-          id = media.parent_metadata.id + '/' + albumID.replace('+', '%20')
-          dist = Util.LevenshteinDistance(name.lower(), media.album.lower())
-          # Sanity check to make sure we have SOME common substring.
-          longestCommonSubstring = len(Util.LongestCommonSubstring(name.lower(), media.album.lower()))
-          # If we don't have at least X% in common, then penalize the score
-          if (float(longestCommonSubstring) / len(media.album)) < .15: dist = dist - 10
-          results.Append(MetadataSearchResult(id = id, name = name, thumb = thumb, lang  = lang, score = 85-dist))
-    results.Sort('score', descending=True)
-    for r in results[:5]:
-      #Track bonus on the top 5 closest title-based matches
-      trackBonus = self.bonusAlbumMatchUsingTracks(media, r.id)
-      #except: trackBonus = 0
-      #Log('album: ' + media.title + ' trackBonus: ' + str(trackBonus))
-      r.score = r.score + trackBonus
-    results.Sort('score', descending=True)
-    
-  def bonusAlbumMatchUsingTracks(self, media, id):
-    (artistName, albumName) = self.artistAlbumFromID(id)
-    lastFM_albumTracks = []
-    #Log('fetching AlbumTrackList for: ' + albumName)
-    #WAS:
-    #for track in lastfm.AlbumTrackList(artistName, albumName):
-    #  (trackName, artist, none1, trackUrl, none2) = track
-    album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)), sleep=0.7)
-    tracks = album.xpath('//track/name')
-    for track in tracks:
-      lastFM_albumTracks.append(track.text)
-    if len(lastFM_albumTracks) == 0: return 0 #no last.fm tracks for the album, so abort!
-    bonus = 0
-    for a in media.children:
-      track = a.title.lower()
-      for lft in lastFM_albumTracks:
-        score = Util.LevenshteinDistance(lft.lower(), track)
-        if score <= 2:
-          bonus += 1
-    if len(media.children) == len(tracks): bonus += 5
-    return bonus
   
-  def artistAlbumFromID(self, id):
-    (artistName, albumName) = id.split('/') 
-    artistName = String.Unquote(artistName).encode('utf-8')
-    albumName = String.Unquote(albumName).encode('utf-8')
-    return (artistName, albumName)
+  def search(self, results, media, lang):
+    
+    # Handle a couple of edge cases where album search will give bad results.
+    if media.parent_metadata.id is None:
+      return
+    if media.parent_metadata.id == '[Unknown Album]':
+      return #eventually, we might be able to look at tracks to match the album
+    
+    # Search for album.
+    Log('Album search: ' + media.title)
+    
+    # Search for albums by artist if not 'Various Artists', otherwise search for the album directly.
+    if media.parent_metadata.id != 'Various%20Artists':
+      albums = GetAlbumsByArtist(media.parent_metadata.id)
+      Log('Found ' + str(len(albums)) + ' albums...')
+    else:
+      albums = SearchAlbums(media.title, ALBUM_MATCH_LIMIT)
+      if not albums:
+        albums = SearchAlbums(RE_STRIP_PARENS.sub('',media.title))
+
+    res = []
+    for album in albums:
+      name = album['name']
+      id = media.parent_metadata.id + '/' + String.Quote(name)
+      dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
+      
+      ### ToMM Note: I don't think we need this...  if we have no common substring, the distance will be way off anyway...
+      # # Sanity check to make sure we have SOME common substring.
+      # longestCommonSubstring = len(Util.LongestCommonSubstring(name.lower(), media.title.lower()))
+      # # If we don't have at least X% in common, then penalize the score
+      # if (float(longestCommonSubstring) / len(media.title)) < .15: dist = dist + 10
+      
+      score = ALBUM_INITIAL_SCORE - dist
+      res.append(MetadataSearchResult(id = id, name = name, lang = lang, score = score))
+
+    res = sorted(res, key=lambda k: k.score, reverse=True)
+    j = 0
+    for i, result in enumerate(res):
+      # Querying for track bonus is expensive (each one is an API request), so only do it for the top N results.
+      if i < ALBUM_TRACK_BONUS_MATCH_LIMIT:
+        bonus = self.get_track_bonus(media, result.name, lang)
+        res[i].score = result.score + bonus
+      if i < 25:
+        Log('Album result: ' + result.name + ' album bonus: ' + str(bonus) + ' score: ' + str(result.score))
+      else:
+        j += 1
+      results.Append(res[i])
+    if j > 0:
+      Log('Processed ' + str(j) + ' more potential album matches (not logged).')
+  
+  def get_track_bonus(self, media, name, lang):
+    bonus = 0
+    try:
+      tracks_result = GetJSON(ALBUM_INFO_URL % (String.Quote(String.Unquote(media.parent_metadata.id)), String.Quote(String.Unquote(name)), lang))
+      if tracks_result.has_key('error'):
+        Log('Error retrieving tracks to apply track bonus: ' + tracks_result['message'])
+        return bonus
+    except:
+      Log('Error retrieving tracks to apply track bonus.')
+      return bonus
+
+    try:
+      for i, t in enumerate(media.children):
+        media_track = t.title.lower()
+        for j, track in enumerate(tracks_result['album']['tracks']['track']):
+          score = Util.LevenshteinDistance(track['name'].lower(), media_track)
+          if score <= NAME_DISTANCE_THRESHOLD:
+            bonus += ALBUM_TRACK_BONUS_INCREMENT
+            # If the tracks also appear close to the same order, boost a little more.
+            if abs(i-j) < ALBUM_TRACK_NUM_DISTANCE_THRESHOLD:
+              bonus += ALBUM_TRACK_BONUS_INCREMENT
+      # If the albums have the same number of tracks, boost more.
+      if len(media.children) == len(tracks_result['album']['tracks']):
+        bonus += ALBUM_NUM_TRACKS_BONUS
+      if bonus >= ALBUM_TRACK_MAX_BONUS:
+        bonus = ALBUM_TRACK_MAX_BONUS
+    except:
+        Log('Didn\'t find any usable tracks in search results, not applying track bonus.')
+    if bonus > 0:
+      Log('Applying track bonus of: ' + str(bonus))
+    return bonus
  
   def update(self, metadata, media, lang):
-    (artistName, albumName) = self.artistAlbumFromID(metadata.id)
-    #Log('Album update for: ' + albumName)
-    album = CallWithRetries(XML.ElementFromURL, lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)))
-    try: 
-      thumb = album.xpath("//image[@size='mega']")[0].text
-    except: 
-      thumb = album.xpath("//image[@size='extralarge']")[0].text
-    metadata.title = album.xpath("//name")[0].text
     try:
-      metadata.summary = decodeXml(re.sub(r'<[^<>]+>', '', album.xpath('//wiki/summary')[0].text))
+      album_results = GetJSON(ALBUM_INFO_URL % (String.Quote(String.Unquote(metadata.id.split('/')[0])), String.Quote(String.Unquote(metadata.id.split('/')[1])), lang))
+      if album_results.has_key('error'):
+        Log('Error retrieving album metadata: ' + album_results['message'])
+        return
     except:
-      pass
-    date = album.xpath("//releasedate")[0].text.split(',')[0].strip()
-    metadata.originally_available_at = None
-    if len(date) > 0:
-      metadata.originally_available_at = Datetime.ParseDate(date).date()
-    if thumb not in metadata.posters and thumb != None:
-      try: metadata.posters[thumb] = Proxy.Media(HTTP.Request(thumb))
-      except: Log('Error getting poster from %s' % thumb)
+      Log('Error retrieving album metadata.')
+      return
 
-def decodeXml(text):
-  trans = [('&amp;','&'),('&quot;','"'),('&lt;','<'),('&gt;','>'),('&apos;','\''),('\n ','\n')]
-  for src, dst in trans:
-    text = text.replace(src, dst)
-  return text      
+    album = album_results['album']
+
+    # Title.
+    metadata.title = album['name']
+    
+    # Artwork.
+    try:
+      valid_names = list()
+      for image in album['image']:
+        if image['#text'] and image['size']:
+          valid_names.append(image['#text'])
+          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size']))
+      metadata.posters.validate_keys(valid_names)
+    except:
+      Log('Error adding artwork for album.')
+      raise
+
+    # Release Date.
+    try:
+      if album['releasedate']:
+        metadata.originally_available_at = Datetime.ParseDate(album['releasedate'].split(',')[0].strip())
+    except:
+      Log('Error adding release date to album.')
+      
+    # Genres.
+    try:
+      if isinstance(album['toptags'], dict) and album['toptags'].has_key('tag'):
+        for genre in album['toptagstags']['tag']:
+          metadata.genres.add(genre['name'].capitalize())
+    except:
+      Log('Error adding genre tags to album.')
+
+def SearchArtists(artist, limit=10):
+  try: 
+    response = GetJSON(ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit))
+    if response.has_key('error'):
+      Log('Error retrieving artist search results: ' + response['message'])
+      return {}
+    else:
+      artist_results = response['results']
+    if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
+      Log('No results for artist search.')
+      return {}
+    # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
+    if not isinstance(artist_results['artistmatches']['artist'], list):
+      artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
+    artists = artist_results['artistmatches']['artist']
+  except:
+    Log('Error retrieving artist search results.')
+    raise
+  return artists
+
+
+def SearchAlbums(album, limit=10):
+  try:
+    response = GetJSON(ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit))
+    if response.has_key('error'):
+      Log('Error retrieving album search results: ' + response['message'])
+      return {}
+    else:
+      album_results = response['results']
+    if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
+      Log('No results for artist search.')
+      return {}
+    # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
+    if not isinstance(album_results['albummatches']['album'], list):
+      album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
+  except:
+    Log('Error retrieving album search results.')
+    raise
+  return album_results['albummatches']['album']
+
+
+def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[]):
+  # Limit of 0 is taken to mean 'all'.
+  try:
+    # Use a larger page size when fetching all to limit the number of API requests.
+    if not limit:
+      pg_size = 200
+    
+    response = GetJSON(ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist)), page, pg_size))
+    
+    if response.has_key('error'):
+      Log('Error retrieving artist album search results: ' + response['message'])
+      return albums
+    else:
+      album_results = response['topalbums']
+    if album_results.has_key('@attr'):
+      total = int(album_results['@attr']['total'])
+    elif album_results.has_key('total'):
+      total = int(album_results['total'])
+
+    if total == 0:
+      Log('No results for album search.')
+      return albums
+
+    try:
+      # Note: Another special case for single-item results, make sure it's a list.
+      # Also, sometimes the 'total' from the response is a lie (says 1 but contains only garbage), so just return in that case.
+      if not isinstance(album_results['album'], list):
+        album_results['album'] = [album_results['album']]
+    except:
+      return albums
+
+  except:
+    Log('Error retrieving artist album search results.')
+    raise
+
+  try:
+    albums.extend(album_results['album'])
+  except:
+    # Sometimes the API will lie and say there's an Nth page of results, but the last one will return garbage.  Just ignore it.
+    pass
+
+  if (total > page * pg_size and limit==0) or (page * pg_size < limit):
+    return GetAlbumsByArtist(artist, page=page+1, limit=limit, pg_size=pg_size, albums=albums)
+  else:
+    return albums
+
+
+def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
+  # try n times waiting 5 seconds in between if something goes wrong
+  d = None
+
+  for t in reversed(range(REQUEST_RETRY_LIMIT)):
+    try:
+      d = JSON.ObjectFromURL(url, sleep=sleep_time, cacheTime=cache_time)
+    except:
+      Log('Error fetching JSON, will try %s more time(s) before giving up.', str(t))
+      time.sleep(REQUEST_RETRY_SLEEP_TIME)
+
+    if isinstance(d, dict):
+      return d
+
+  Log('Error fetching JSON')
+  return None
