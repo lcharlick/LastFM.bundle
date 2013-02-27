@@ -531,6 +531,7 @@ def ShouldProxy(url):
     proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL, cacheTime=300).content.strip())
   except:
     proxy_pct = 0 # if we don't hear from the proxy server, assume the worst.
+    pass
 
   url_hash_val = float(int(''.join(list(Hash.MD5(url))[-2:]), 16)) / 255 * 100
   if url_hash_val < proxy_pct:
