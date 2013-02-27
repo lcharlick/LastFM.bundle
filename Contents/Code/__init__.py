@@ -1,12 +1,12 @@
 # Rewrite (use JSON API, other matching tweaks) by ToMM
 
-# TODO: Dedupe and don't add lower quality artwork artwork.
+# TODO: Dedupe and don't add lower quality artwork.
 
 import time
 
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
-PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php' # Should return desired threshold (0-100) of requests to send in the 'new style'
+PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.
 # END PROXY
 
 # Last.fm API
@@ -59,7 +59,7 @@ class LastFmAgent(Agent.Artist):
                Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
                Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean]
   
-  def search(self, results, media, lang):
+  def search(self, results, media, lang, manual):
 
     # Handle a couple of edge cases where artist search will give bad results.
     if media.artist == '[Unknown Artist]': 
@@ -71,6 +71,8 @@ class LastFmAgent(Agent.Artist):
     
     # Search for artist.
     Log('Artist search: ' + media.artist)
+    if manual:
+      Log('Custom search.')
     artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
 
     for i, artist in enumerate(artists):
@@ -78,6 +80,7 @@ class LastFmAgent(Agent.Artist):
       # If there's only a single result, it will not include the 'listeners' key.
       # Distrust artists with fewer than N listeners.
       if artist.has_key('listeners') and artist['listeners'] < ARTIST_MIN_LISTENER_THRESHOLD:
+        Log('Skipping %s with only %d listeners.' % (artist['name'], artist['listeners']))
         continue
 
       id = String.Quote(artist['name'])
@@ -157,7 +160,7 @@ class LastFmAlbumAgent(Agent.Album):
                Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean]
   fallback_agent = 'com.plexapp.agents.allmusic'
   
-  def search(self, results, media, lang):
+  def search(self, results, media, lang, manual):
     
     # Handle a couple of edge cases where album search will give bad results.
     if media.parent_metadata.id is None:
@@ -167,28 +170,23 @@ class LastFmAlbumAgent(Agent.Album):
     
     # Search for album.
     Log('Album search: ' + media.title)
+    if manual:
+      Log('Custom search.')
     
     # Search for albums by artist if not 'Various Artists', otherwise search for the album directly.
     if media.parent_metadata.id != 'Various%20Artists':
       albums = GetAlbumsByArtist(media.parent_metadata.id)
       Log('Found ' + str(len(albums)) + ' albums...')
     else:
-      albums = SearchAlbums(media.title, ALBUM_MATCH_LIMIT)
+      albums = SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT)
       if not albums:
-        albums = SearchAlbums(RE_STRIP_PARENS.sub('',media.title))
+        albums = SearchAlbums(RE_STRIP_PARENS.sub('',media.title).lower())
 
     res = []
     for album in albums:
       name = album['name']
       id = media.parent_metadata.id + '/' + String.Quote(name)
       dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
-      
-      ### ToMM Note: I don't think we need this...  if we have no common substring, the distance will be way off anyway...
-      # # Sanity check to make sure we have SOME common substring.
-      # longestCommonSubstring = len(Util.LongestCommonSubstring(name.lower(), media.title.lower()))
-      # # If we don't have at least X% in common, then penalize the score
-      # if (float(longestCommonSubstring) / len(media.title)) < .15: dist = dist + 10
-      
       score = ALBUM_INITIAL_SCORE - dist
       res.append(MetadataSearchResult(id = id, name = name, lang = lang, score = score))
 
@@ -271,154 +269,241 @@ class LastFmAlbumAgent(Agent.Album):
       raise
 
 def SearchArtists(artist, limit=10, legacy=False):
-  legacy_request = LegacySearchArtistsRequest(artist)
-  Log('LEGACY REQUEST EQUIVALENT -> ' + legacy_request)
-  Log('Below proxy threshold? -> ' + str(ShouldProxy(legacy_request)))
-
-  try: 
-    response = GetJSON(ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit))
-    if response.has_key('error'):
-      Log('Error retrieving artist search results: ' + response['message'])
-      return []
-    else:
-      artist_results = response['results']
-    if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
-      Log('No results for artist search.')
-      return []
-    # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
-    if not isinstance(artist_results['artistmatches']['artist'], list):
-      artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
-    artists = artist_results['artistmatches']['artist']
-  except:
-    Log('Error retrieving artist search results.')
-    raise
-  return artists
+  url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit)
+  # PROXY
+  Log('ShouldProxy is ' + str(ShouldProxy(url)))
+  if ShouldProxy(url):
+    try:
+      artist = SafeStrip(artist.lower())
+      artists = []
+      for lfm_artist in lastfm.SearchArtists(artist,limit=5)[0]:
+        (url, name, image, listeners) = lfm_artist
+        img = {}
+        artists.append({'name':name, 'listeners':listeners})
+      return artists
+    except:
+      Log('Error retreiving artist search results (legacy request).')
+      raise
+  else:
+  # END PROXY
+    try: 
+      response = GetJSON(url)
+      if response.has_key('error'):
+        Log('Error retrieving artist search results: ' + response['message'])
+        return []
+      else:
+        artist_results = response['results']
+      if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
+        Log('No results for artist search.')
+        return []
+      # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
+      if not isinstance(artist_results['artistmatches']['artist'], list):
+        artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
+      artists = artist_results['artistmatches']['artist']
+    except:
+      Log('Error retrieving artist search results.')
+      raise
+    return artists
 
 
 def SearchAlbums(album, limit=10, legacy=False):
-  legacy_request = LegacySearchAlbumsRequest(album)
-  Log('LEGACY REQUEST EQUIVALENT -> ' + legacy_request)
-  Log('Below proxy threshold? -> ' + str(ShouldProxy(legacy_request)))
-
-  try:
-    response = GetJSON(ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit))
-    if response.has_key('error'):
-      Log('Error retrieving album search results: ' + response['message'])
-      return []
-    else:
-      album_results = response['results']
-    if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
-      Log('No results for artist search.')
-      return []
-    # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
-    if not isinstance(album_results['albummatches']['album'], list):
-      album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
-  except:
-    Log('Error retrieving album search results.')
-    raise
-  return album_results['albummatches']['album']
+  url = ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit)
+  # PROXY
+  if ShouldProxy(url):
+    try:
+      albums = []
+      (xml_albums, more) = lastfm.SearchAlbums(album)
+      for album in xml_albums:
+        (name, artist, thumb, url) = album
+        albums.append({'name':name, 'artist':artist})
+      return albums
+    except:
+      Log('Error retreiving album search results (legacy request).')
+      raise
+  else:
+  # END PROXY
+    try:
+      response = GetJSON(url)
+      if response.has_key('error'):
+        Log('Error retrieving album search results: ' + response['message'])
+        return []
+      else:
+        album_results = response['results']
+      if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
+        Log('No results for artist search.')
+        return []
+      # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
+      if not isinstance(album_results['albummatches']['album'], list):
+        album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
+    except:
+      Log('Error retrieving album search results.')
+      raise
+    return album_results['albummatches']['album']
 
 
 def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=False):
-  legacy_request = LegacyArtistAlbumsRequest(artist)
-  Log('LEGACY REQUEST EQUIVALENT -> ' + legacy_request)
-  Log('Below proxy threshold? -> ' + str(ShouldProxy(legacy_request)))
   # Limit of 0 is taken to mean 'all'.
-  try:
-    # Use a larger page size when fetching all to limit the number of API requests.
-    # Can't use a huge value, e.g. 10000 because not all results will be returned for some unknown reason.
-    if not limit:
-      pg_size = 200
-    
-    response = GetJSON(ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist)), page, pg_size))
-    
-    if response.has_key('error'):
-      Log('Error retrieving artist album search results: ' + response['message'])
+  url = ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist)), page, pg_size)
+  # PROXY
+  if ShouldProxy(url):
+    try:
+      albums = []
+      for album in lastfm.ArtistAlbums(String.Unquote(artist)):
+        (name, artist_name, thumb, url) = album
+        albums.append({'name':name})
       return albums
-    else:
-      album_results = response['topalbums']
-    if album_results.has_key('@attr'):
-      total = int(album_results['@attr']['total'])
-    elif album_results.has_key('total'):
-      total = int(album_results['total'])
+    except:
+      Log('Error retrieving artist album search results (legacy request).')
+      raise
+  else:
+  # END PROXY
+    try:
+      # Use a larger page size when fetching all to limit the number of API requests.
+      # Can't use a huge value, e.g. 10000 because not all results will be returned for some unknown reason.
+      if not limit:
+        pg_size = 200
+      
+      response = GetJSON(url)
+      
+      if response.has_key('error'):
+        Log('Error retrieving artist album search results: ' + response['message'])
+        return albums
+      else:
+        album_results = response['topalbums']
+      if album_results.has_key('@attr'):
+        total = int(album_results['@attr']['total'])
+      elif album_results.has_key('total'):
+        total = int(album_results['total'])
+      if total == 0:
+        Log('No results for album search.')
+        return albums
 
-    if total == 0:
-      Log('No results for album search.')
-      return albums
+      try:
+        # Note: Another special case for single-item results, make sure it's a list.
+        # Also, sometimes the 'total' from the response is a lie (says 1 but contains only garbage), so just return in that case.
+        if not isinstance(album_results['album'], list):
+          album_results['album'] = [album_results['album']]
+      except:
+        return albums
+
+    except:
+      Log('Error retrieving artist album search results.')
+      raise
 
     try:
-      # Note: Another special case for single-item results, make sure it's a list.
-      # Also, sometimes the 'total' from the response is a lie (says 1 but contains only garbage), so just return in that case.
-      if not isinstance(album_results['album'], list):
-        album_results['album'] = [album_results['album']]
+      albums.extend(album_results['album'])
     except:
+      # Sometimes the API will lie and say there's an Nth page of results, but the last one will return garbage.  Just ignore it.
+      pass
+
+    if (total > page * pg_size and limit==0) or (page * pg_size < limit):
+      return GetAlbumsByArtist(artist, page=page+1, limit=limit, pg_size=pg_size, albums=albums)
+    else:
       return albums
-
-  except:
-    Log('Error retrieving artist album search results.')
-    raise
-
-  try:
-    albums.extend(album_results['album'])
-  except:
-    # Sometimes the API will lie and say there's an Nth page of results, but the last one will return garbage.  Just ignore it.
-    pass
-
-  if (total > page * pg_size and limit==0) or (page * pg_size < limit):
-    return GetAlbumsByArtist(artist, page=page+1, limit=limit, pg_size=pg_size, albums=albums)
-  else:
-    return albums
 
 
 def GetArtist(id, lang='en'):
-  legacy_request = LegacyArtistInfoRequest(id)
-  Log('LEGACY REQUEST EQUIVALENT -> ' + legacy_request)
-  Log('Below proxy threshold? -> ' + str(ShouldProxy(legacy_request)))
-  try:
-    artist_results = GetJSON(ARTIST_INFO_URL % (String.Quote(String.Unquote(id)), lang))
-    if artist_results.has_key('error'):
-      Log('Error retrieving artist metadata: ' + artist_results['message'])
+  url = ARTIST_INFO_URL % (String.Quote(String.Unquote(id)), lang)
+  # PROXY
+  if ShouldProxy(url):
+    try:
+      xml_artist = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(String.Unquote(id), True))[0]
+      image = []
+      for xml_image in xml_artist.xpath('//artist/image'):
+        image.append({'#text':xml_image.text, 'size':xml_image.get('size')})
+      tags = []
+      for xml_tag in xml_artist.xpath('//artist/tags/tag/name'):
+        tags.append({'name':xml_tag})
+      artist = {
+        'name':String.Unquote(xml_artist.xpath('//artist/name')[0].text, True),
+        'bio':{'content':xml_artist.xpath('//bio/content')[0].text},
+        'image':image,
+        'toptags':{'tag':tags}
+      }
+      return artist
+    except:
+      Log('Error retreiving artist metadata (legacy request).')
+      raise
       return {}
-    return artist_results['artist']
-  except:
-    Log('Error retrieving artist metadata.')
-    raise
-    return {}
+  else:
+  # END PROXY
+    try:
+      artist_results = GetJSON(url)
+      if artist_results.has_key('error'):
+        Log('Error retrieving artist metadata: ' + artist_results['message'])
+        return {}
+      return artist_results['artist']
+    except:
+      Log('Error retrieving artist metadata.')
+      raise
+      return {}
 
 
 def GetAlbum(artist_id, album_id, lang='en'):
-  legacy_request = LegacyAlbumInfoRequest(artist_id, album_id)
-  Log('LEGACY REQUEST EQUIVALENT -> ' + legacy_request)
-  Log('Below proxy threshold? -> ' + str(ShouldProxy(legacy_request)))
-  try:
-    album_results = GetJSON(ALBUM_INFO_URL % (String.Quote(String.Unquote(artist_id)), String.Quote(String.Unquote(album_id)), lang))
-    if album_results.has_key('error'):
-      Log('Error retrieving album metadata: ' + album_results['message'])
+  url = ALBUM_INFO_URL % (String.Quote(String.Unquote(artist_id)), String.Quote(String.Unquote(album_id)), lang)
+  # PROXY
+  if ShouldProxy(url):
+    try:
+      album = {}
+      xml_album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(String.Unquote(artist_id), True), String.Quote(String.Unquote(album_id), True)))
+      image = []
+      for xml_image in xml_album.xpath('//image'):
+        image.append({'#text':xml_image.text, 'size':xml_image.get('size')})
+      tags = []
+      for xml_tag in xml_album.xpath('//tags/tag/name'):
+        tags.append({'name':xml_tag})
+      return {
+        'name':xml_album.xpath("//name")[0].text,
+        'image':image,
+        'releasedate':xml_album.xpath("//releasedate")[0],
+        'toptags':{'tag':tags}
+      }
+    except:
+      Log('Error retreiving album metadata (legacy request).')
+      raise
+  else:
+  # END PROXY
+    try:
+      album_results = GetJSON(url)
+      if album_results.has_key('error'):
+        Log('Error retrieving album metadata: ' + album_results['message'])
+        return {}
+      return album_results['album']
+    except:
+      Log('Error retrieving album metadata.')
+      raise
       return {}
-    return album_results['album']
-  except:
-    Log('Error retrieving album metadata.')
-    raise
-    return {}
 
 
 def GetTracks(artist_id, album_name, lang='en'):
-  legacy_request = LegacyAlbumInfoRequest(artist_id, album_name)
-  Log('LEGACY REQUEST EQUIVALENT -> ' + legacy_request)
-  Log('Below proxy threshold? -> ' + str(ShouldProxy(legacy_request)))
-  try:
-    tracks_result = GetJSON(ALBUM_INFO_URL % (String.Quote(String.Unquote(artist_id)), String.Quote(String.Unquote(album_name)), lang))
-    if tracks_result.has_key('error'):
-      Log('Error retrieving tracks to apply track bonus: ' + tracks_result['message'])
+  url = ALBUM_INFO_URL % (String.Quote(String.Unquote(artist_id)), String.Quote(String.Unquote(album_name)), lang)
+  # PROXY
+  if ShouldProxy(url):
+    try:
+      tracks = []
+      album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(String.Unquote(artist_id), True), String.Quote(album_name, True)), sleep=0.7)
+      xml_tracks = album.xpath('//track/name')
+      for track in xml_tracks:
+        tracks.append({'name':track.text})
+      return tracks
+    except:
+      Log('Error retreiving tracks for album (legacy request).')
+      raise
+  else:
+  # END PROXY
+    try:
+      tracks_result = GetJSON(url)
+      if tracks_result.has_key('error'):
+        Log('Error retrieving tracks to apply track bonus: ' + tracks_result['message'])
+        return []
+      tracks = tracks_result['album']['tracks']['track']
+      if not isinstance(tracks, list):
+        tracks = [tracks]
+      return tracks
+    except:
+      Log('Error retrieving tracks to apply track bonus.')
+      raise
       return []
-    tracks = tracks_result['album']['tracks']['track']
-    if not isinstance(tracks, list):
-      tracks = [tracks]
-    return tracks
-  except:
-    Log('Error retrieving tracks to apply track bonus.')
-    raise
-    return []
 
 
 def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
@@ -428,7 +513,7 @@ def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
 
   for t in reversed(range(REQUEST_RETRY_LIMIT)):
     try:
-      d = JSON.ObjectFromURL(url, sleep=sleep_time, cacheTime=cache_time, headers={'Accept-Encoding':'gzip,deflate,sdch'})
+      d = JSON.ObjectFromURL(url, sleep=sleep_time, cacheTime=cache_time, headers={'Accept-Encoding':'gzip'})
     except:
       Log('Error fetching JSON, will try %s more time(s) before giving up.', str(t))
       time.sleep(REQUEST_RETRY_SLEEP_TIME)
@@ -441,15 +526,19 @@ def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
 
 
 # PROXY
-
 def ShouldProxy(url):
   try:
-    proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL).content.strip())
+    proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL, cacheTime=300).content.strip())
   except:
-    proxy_pct = 20
-    #return True
-  url_hash_pct = float(int(''.join(list(Hash.MD5(url))[-2:]), 16)) / 255 * 100
-  return url_hash_pct < proxy_pct
+    proxy_pct = 0 # if we don't hear from the proxy server, assume the worst.
+
+  url_hash_val = float(int(''.join(list(Hash.MD5(url))[-2:]), 16)) / 255 * 100
+  if url_hash_val < proxy_pct:
+    Log('URL hash value of %d is below the threshold of %d, sending compressed JSON request.' % (url_hash_val, proxy_pct))
+    return False
+  else:
+    Log('URL hash value of %d is above the threshold of %d, sending legacy XML request.' % (url_hash_val, proxy_pct))
+    return True
 
 def SafeStrip(ss):
     """
@@ -460,41 +549,4 @@ def SafeStrip(ss):
     if len(s.strip()) == 0:
       return ss
     return s
-
-def LegacySearchArtistsRequest(query, page=0, URLEncode = True, limit=10):
-  # Called with:
-  # lastfm.SearchArtists(artist,limit=5)[0] where artist is safe_strip(media.artist.lower())
-  artist = SafeStrip(query.lower())
-  limit = 5
-  query = String.URLEncode(artist)
-  url = lastfm.SEARCH_ARTISTS % (query, page, limit)
-  return url
-
-def LegacyArtistAlbumsRequest(artist_name):
-  # Called with:
-  # lastfm.ArtistAlbums(artistID) where artistID is r[0] from a SearchArtists result.
-  # CallWithRetries(lastfm.ArtistAlbums, String.Unquote(media.parent_metadata.id))
-  url = lastfm.ARTIST_ALBUMS % String.Quote(artist_name.encode('utf-8'), True)
-  return url
-
-def LegacyArtistInfoRequest(artist_id):
-  # Called with:
-  # artist = CallWithRetries(XML.ElementFromURL, lastfm.ARTIST_INFO % String.Quote(String.Unquote(metadata.id), True))[0]
-  return lastfm.ARTIST_INFO % String.Quote(String.Unquote(artist_id), True)
-
-def LegacySearchAlbumsRequest(media_title):
-  # Called with:
-  # CallWithRetries(lastfm.SearchAlbums, media.title.lower())
-  media_title = media_title.lower()
-  media_title = String.URLEncode(media_title)
-  url = lastfm.SEARCH_ALBUMS % (media_title, 0)
-  return url
-
-def LegacyAlbumInfoRequest(artist_id, album_id):
-  # Called with:
-  # XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(artistName, True), String.Quote(albumName, True)), sleep=0.7)
-  artist_name = String.Unquote(artist_id).encode('utf-8')
-  album_name = String.Unquote(album_id).encode('utf-8')
-  return lastfm.ALBUM_INFO % (String.Quote(artist_name, True), String.Quote(album_name, True))
-
 # END PROXY
