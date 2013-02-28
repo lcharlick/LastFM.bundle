@@ -6,7 +6,7 @@ import time
 
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
-PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.
+PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.  
 # END PROXY
 
 # Last.fm API
@@ -341,11 +341,11 @@ def SearchAlbums(album, limit=10, legacy=False):
     return album_results['albummatches']['album']
 
 
-def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=False):
+def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=True):
   # Limit of 0 is taken to mean 'all'.
   url = ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist)), page, pg_size)
   # PROXY
-  if ShouldProxy(url):
+  if ShouldProxy(url) and legacy:
     try:
       albums = []
       for album in lastfm.ArtistAlbums(String.Unquote(artist)):
@@ -397,7 +397,7 @@ def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=Fal
       pass
 
     if (total > page * pg_size and limit==0) or (page * pg_size < limit):
-      return GetAlbumsByArtist(artist, page=page+1, limit=limit, pg_size=pg_size, albums=albums)
+      return GetAlbumsByArtist(artist, page=page+1, limit=limit, pg_size=pg_size, albums=albums, legacy=False)
     else:
       return albums
 
