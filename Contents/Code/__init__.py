@@ -73,6 +73,7 @@ class LastFmAgent(Agent.Artist):
     Log('Artist search: ' + media.artist)
     if manual:
       Log('Custom search.')
+    artists = []
     artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
 
     for i, artist in enumerate(artists):
@@ -178,6 +179,7 @@ class LastFmAlbumAgent(Agent.Album):
     
     # Search for albums by artist if not 'Various Artists', otherwise search for the album directly.
     if media.parent_metadata.id != 'Various%20Artists':
+      albums = []
       albums = GetAlbumsByArtist(media.parent_metadata.id)
       Log('Found ' + str(len(albums)) + ' albums...')
     else:
