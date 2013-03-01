@@ -143,13 +143,16 @@ class LastFmAgent(Agent.Artist):
       raise
 
     # Genres.
-    try:
-      metadata.genres.clear()
-      if isinstance(artist['tags'], dict) and artist['tags'].has_key('tag') and len(artist['tags']['tag']) > 0:
-        for genre in artist['tags']['tag']:
-          metadata.genres.add(genre['name'].capitalize())
-    except:
-      Log('Error adding genre tags for artist.')
+    if Prefs['genres']:
+      try:
+        metadata.genres.clear()
+        if isinstance(artist['tags'], dict) and artist['tags'].has_key('tag'):
+          if not isinstance(artist['toptags']['tag'], list):
+            artist['toptags']['tag'] = [artist['toptags']['tag']]
+          for genre in artist['tags']['tag']:
+            metadata.genres.add(genre['name'].capitalize())
+      except:
+        Log('Error adding genre tags for artist.')
 
   
 class LastFmAlbumAgent(Agent.Album):
@@ -258,15 +261,16 @@ class LastFmAlbumAgent(Agent.Album):
       Log('Error adding release date to album.')
       
     # Genres.
-    try:
-      if isinstance(album['toptags'], dict) and album['toptags'].has_key('tag'):
-        if not isinstance(album['toptags']['tag'], list):
-          album['toptags']['tag'] = [album['toptags']['tag']]
-        for genre in album['toptags']['tag']:
-          metadata.genres.add(genre['name'].capitalize())
-    except:
-      Log('Error adding genre tags to album.')
-      raise
+    if Prefs['genres']:
+      try:
+        if isinstance(album['toptags'], dict) and album['toptags'].has_key('tag'):
+          if not isinstance(album['toptags']['tag'], list):
+            album['toptags']['tag'] = [album['toptags']['tag']]
+          for genre in album['toptags']['tag']:
+            metadata.genres.add(genre['name'].capitalize())
+      except:
+        Log('Error adding genre tags to album.')
+        raise
 
 def SearchArtists(artist, limit=10, legacy=False):
   url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit)

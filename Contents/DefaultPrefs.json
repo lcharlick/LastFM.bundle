@@ -1,0 +1,8 @@
+[
+    {
+        "id": "genres",
+        "label": "Use genre tags from Last.fm",
+        "type": "bool",
+        "default": "true"
+    }
+]
