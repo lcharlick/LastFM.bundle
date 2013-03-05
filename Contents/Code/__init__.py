@@ -132,24 +132,18 @@ class LastFmAgent(Agent.Artist):
     # Bio.
     metadata.summary = String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip()
 
-    # Artwork.
+   # Artwork.
     try:
-      art = []
+      valid_names = list()
       for image in artist['image']:
         if image['#text'] and image['size']:
-          art.insert(ARTWORK_SIZE_RANKING.index(image['size']),image['#text'])
-      seen = []
-      valid_names = []
-      for i, a in enumerate(art):
-        if a.split('/')[-1] in seen:
-          continue
-        seen.append(a.split('/')[-1])
-        valid_names.append(a)
-        metadata.posters[a] = Proxy.Media(HTTP.Request(a), sort_order=i+1)
+          valid_names.append(image['#text'])
+          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
       metadata.posters.validate_keys(valid_names)
     except:
       Log('Couldn\'t add artwork for artist.')
       # raise
+
 
     # Genres.
     if Prefs['genres']:
@@ -284,18 +278,11 @@ class LastFmAlbumAgent(Agent.Album):
     
     # Artwork.
     try:
-      art = []
+      valid_names = list()
       for image in album['image']:
         if image['#text'] and image['size']:
-          art.insert(ARTWORK_SIZE_RANKING.index(image['size']),image['#text'])
-      seen = []
-      valid_names = []
-      for i, a in enumerate(art):
-        if a.split('/')[-1] in seen:
-          continue
-        seen.append(a.split('/')[-1])
-        valid_names.append(a)
-        metadata.posters[a] = Proxy.Media(HTTP.Request(a), sort_order=i+1)
+          valid_names.append(image['#text'])
+          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
       metadata.posters.validate_keys(valid_names)
     except:
       Log('Couldn\'t add artwork for album.')
@@ -323,7 +310,6 @@ class LastFmAlbumAgent(Agent.Album):
 def SearchArtists(artist, limit=10, legacy=False):
   url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit)
   # PROXY
-  Log('ShouldProxy is ' + str(ShouldProxy(url)))
   if ShouldProxy(url):
     try:
       artist = SafeStrip(artist.lower())
