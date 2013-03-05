@@ -1,12 +1,11 @@
 # Rewrite (use JSON API, other matching tweaks) by ToMM
 
-# TODO: Dedupe and don't add lower quality artwork.
-
 import time
 
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
 PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.  
+PROXY_THRESHOLD = 100 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
 # END PROXY
 
 # Last.fm API
@@ -30,6 +29,8 @@ ARTIST_ALBUMS_MATCH_LIMIT = 5 # Max number of artist matches to try for album bo
 ARTIST_ALBUMS_LIMIT = 100 # How many albums do we want to grab for artist album matching bonus.
 ARTIST_MIN_LISTENER_THRESHOLD = 1000 # Minimum number of listeners for an artist to be considered credible.
 ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album searches with no artist info (e.g. Various Artists).
+ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
+ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
 ALBUM_TRACK_BONUS_MATCH_LIMIT = 5 # Max number of albums to try for track bonus.  Each one incurs at most one API request per album.
 QUERY_SLEEP_TIME = 0.5 # How long to sleep before firing off each API request.
 REQUEST_RETRY_LIMIT = 3 # Number of times to retry failing API requests.
@@ -114,7 +115,7 @@ class LastFmAgent(Agent.Artist):
             break
     except:
       Log('Did\'t find usable albums in search results, not applying artist album bonus.')
-      raise
+      # raise
     if bonus > 0:
       Log('Applying album bonus of: ' + str(bonus))
     return bonus
@@ -130,18 +131,25 @@ class LastFmAgent(Agent.Artist):
 
     # Bio.
     metadata.summary = String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip()
-    
+
     # Artwork.
     try:
-      valid_names = list()
+      art = []
       for image in artist['image']:
         if image['#text'] and image['size']:
-          valid_names.append(image['#text'])
-          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
+          art.insert(ARTWORK_SIZE_RANKING.index(image['size']),image['#text'])
+      seen = []
+      valid_names = []
+      for i, a in enumerate(art):
+        if a.split('/')[-1] in seen:
+          continue
+        seen.append(a.split('/')[-1])
+        valid_names.append(a)
+        metadata.posters[a] = Proxy.Media(HTTP.Request(a), sort_order=i+1)
       metadata.posters.validate_keys(valid_names)
     except:
-      Log('Error adding artwork for artist.')
-      raise
+      Log('Couldn\'t add artwork for artist.')
+      # raise
 
     # Genres.
     if Prefs['genres']:
@@ -153,7 +161,7 @@ class LastFmAgent(Agent.Artist):
           for genre in artist['tags']['tag']:
             metadata.genres.add(genre['name'].capitalize())
       except:
-        Log('Error adding genre tags for artist.')
+        Log('Couldn\'t add genre tags for artist.')
 
   
 class LastFmAlbumAgent(Agent.Album):
@@ -177,38 +185,69 @@ class LastFmAlbumAgent(Agent.Album):
     if manual:
       Log('Custom search.')
     
+    albums = []
     # Search for albums by artist if not 'Various Artists', otherwise search for the album directly.
     if media.parent_metadata.id != 'Various%20Artists':
-      albums = []
-      albums = GetAlbumsByArtist(media.parent_metadata.id)
-      Log('Found ' + str(len(albums)) + ' albums...')
-    else:
-      albums = SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT)
-      if not albums:
-        albums = SearchAlbums(RE_STRIP_PARENS.sub('',media.title).lower())
+      albums = self.score_albums(media, lang, GetAlbumsByArtist(media.parent_metadata.id))
+    if not albums or not albums[0].has_key('score') or albums[0]['score'] <= ALBUM_MATCH_GOOD_SCORE:
+      Log('No good matches found in ' + str(len(albums)) + ' results for albums by artist search.  Searching by album title.')
+      albums.extend(self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT)))
+      if albums:
+        albums = sorted(albums, key=lambda k: k['score'], reverse=True)
+    if not albums or not albums[0].has_key('score') or albums[0]['score'] <= ALBUM_MATCH_GOOD_SCORE:
+      stripped_title = RE_STRIP_PARENS.sub('',media.title).lower()
+      Log('No good matches found in album title search for %s, searching for %s.' % (media.title.lower(), stripped_title))
+      albums.extend(self.score_albums(media, lang, SearchAlbums(stripped_title)))
+      if albums:
+        albums = sorted(albums, key=lambda k: k['score'], reverse=True)
 
+    # Dedupe albums.
+    seen = {}
+    deduped = []
+    for album in albums:
+      if album['id'] in seen:
+        continue
+      seen[album['id']] = True
+      deduped.append(album)
+    albums = deduped
+
+    Log('Found ' + str(len(albums)) + ' albums...')
+
+    for album in albums:
+      results.Append(MetadataSearchResult(id = album['id'], name = album['name'], lang = album['lang'], score = album['score']))
+
+  def score_albums(self, media, lang, albums):
     res = []
+    matches = []
     for album in albums:
       name = album['name']
+      if album.has_key('artist'):
+        if not isinstance(album['artist'], unicode) and not isinstance(album['artist'], str):
+          artist = album['artist']['name']
+        else:
+          artist = album['artist']
+      else:
+        artist = ''
       id = media.parent_metadata.id + '/' + String.Quote(name)
       dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
-      score = ALBUM_INITIAL_SCORE - dist
-      res.append(MetadataSearchResult(id = id, name = name, lang = lang, score = score))
+      artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
+      score = ALBUM_INITIAL_SCORE - dist - artist_dist
+      res.append({'id':id, 'name':name, 'lang':lang, 'score':score})
 
-    res = sorted(res, key=lambda k: k.score, reverse=True)
-    j = 0
+    res = sorted(res, key=lambda k: k['score'], reverse=True)
     for i, result in enumerate(res):
       # Querying for track bonus is expensive (each one is an API request), so only do it for the top N results.
       if i < ALBUM_TRACK_BONUS_MATCH_LIMIT:
-        bonus = self.get_track_bonus(media, result.name, lang)
-        res[i].score = result.score + bonus
-      if i < 25:
-        Log('Album result: ' + result.name + ' album bonus: ' + str(bonus) + ' score: ' + str(result.score))
+        bonus = self.get_track_bonus(media, result['name'], lang)
+        res[i]['score'] = res[i]['score'] + bonus
+      if res[i]['score'] >= ALBUM_MATCH_MIN_SCORE:
+        Log('Album result: ' + result['name'] + ' album bonus: ' + str(bonus) + ' score: ' + str(result['score']))
+        matches.append(res[i])
       else:
-        j += 1
-      results.Append(res[i])
-    if j > 0:
-      Log('Processed ' + str(j) + ' more potential album matches (not logged).')
+        Log('Skipping %d album results that don\'t meet the minimum score of %d.' % (len(res) - i, ALBUM_MATCH_MIN_SCORE))
+        break
+    
+    return sorted(matches, key=lambda k: k['score'], reverse=True)
   
   def get_track_bonus(self, media, name, lang):
     tracks = GetTracks(media.parent_metadata.id, name, lang)
@@ -230,7 +269,7 @@ class LastFmAlbumAgent(Agent.Album):
         bonus = ALBUM_TRACK_MAX_BONUS
     except:
         Log('Didn\'t find any usable tracks in search results, not applying track bonus.')
-        raise
+        # raise
     if bonus > 0:
       Log('Applying track bonus of: ' + str(bonus))
     return bonus
@@ -245,22 +284,29 @@ class LastFmAlbumAgent(Agent.Album):
     
     # Artwork.
     try:
-      valid_names = list()
+      art = []
       for image in album['image']:
         if image['#text'] and image['size']:
-          valid_names.append(image['#text'])
-          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
+          art.insert(ARTWORK_SIZE_RANKING.index(image['size']),image['#text'])
+      seen = []
+      valid_names = []
+      for i, a in enumerate(art):
+        if a.split('/')[-1] in seen:
+          continue
+        seen.append(a.split('/')[-1])
+        valid_names.append(a)
+        metadata.posters[a] = Proxy.Media(HTTP.Request(a), sort_order=i+1)
       metadata.posters.validate_keys(valid_names)
     except:
-      Log('Error adding artwork for album.')
-      raise
+      Log('Couldn\'t add artwork for album.')
+      # raise
 
     # Release Date.
     try:
       if album['releasedate']:
         metadata.originally_available_at = Datetime.ParseDate(album['releasedate'].split(',')[0].strip())
     except:
-      Log('Error adding release date to album.')
+      Log('Couldn\'t add release date to album.')
       
     # Genres.
     if Prefs['genres']:
@@ -271,8 +317,8 @@ class LastFmAlbumAgent(Agent.Album):
           for genre in album['toptags']['tag']:
             metadata.genres.add(genre['name'].capitalize())
       except:
-        Log('Error adding genre tags to album.')
-        raise
+        Log('Couldn\'t add genre tags to album.')
+        # raise
 
 def SearchArtists(artist, limit=10, legacy=False):
   url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit)
@@ -289,7 +335,7 @@ def SearchArtists(artist, limit=10, legacy=False):
       return artists
     except:
       Log('Error retreiving artist search results (legacy request).')
-      raise
+      # raise
   else:
   # END PROXY
     try: 
@@ -308,7 +354,7 @@ def SearchArtists(artist, limit=10, legacy=False):
       artists = artist_results['artistmatches']['artist']
     except:
       Log('Error retrieving artist search results.')
-      raise
+      # raise
     return artists
 
 
@@ -325,7 +371,7 @@ def SearchAlbums(album, limit=10, legacy=False):
       return albums
     except:
       Log('Error retreiving album search results (legacy request).')
-      raise
+      # raise
   else:
   # END PROXY
     try:
@@ -343,7 +389,7 @@ def SearchAlbums(album, limit=10, legacy=False):
         album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
     except:
       Log('Error retrieving album search results.')
-      raise
+      # raise
     return album_results['albummatches']['album']
 
 
@@ -360,7 +406,7 @@ def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=Tru
       return albums
     except:
       Log('Error retrieving artist album search results (legacy request).')
-      raise
+      # raise
   else:
   # END PROXY
     try:
@@ -394,7 +440,7 @@ def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=Tru
 
     except:
       Log('Error retrieving artist album search results.')
-      raise
+      # raise
 
     try:
       albums.extend(album_results['album'])
@@ -429,7 +475,7 @@ def GetArtist(id, lang='en'):
       return artist
     except:
       Log('Error retreiving artist metadata (legacy request).')
-      raise
+      # raise
       return {}
   else:
   # END PROXY
@@ -441,7 +487,7 @@ def GetArtist(id, lang='en'):
       return artist_results['artist']
     except:
       Log('Error retrieving artist metadata.')
-      raise
+      # raise
       return {}
 
 
@@ -466,7 +512,7 @@ def GetAlbum(artist_id, album_id, lang='en'):
       }
     except:
       Log('Error retreiving album metadata (legacy request).')
-      raise
+      # raise
   else:
   # END PROXY
     try:
@@ -477,7 +523,7 @@ def GetAlbum(artist_id, album_id, lang='en'):
       return album_results['album']
     except:
       Log('Error retrieving album metadata.')
-      raise
+      # raise
       return {}
 
 
@@ -494,7 +540,7 @@ def GetTracks(artist_id, album_name, lang='en'):
       return tracks
     except:
       Log('Error retreiving tracks for album (legacy request).')
-      raise
+      # raise
   else:
   # END PROXY
     try:
@@ -508,12 +554,11 @@ def GetTracks(artist_id, album_name, lang='en'):
       return tracks
     except:
       Log('Error retrieving tracks to apply track bonus.')
-      raise
+      # raise
       return []
 
 
 def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
-  Log('NEW JSON REQUEST -> ' + url)
   # try n times waiting 5 seconds in between if something goes wrong
   d = None
 
@@ -533,14 +578,17 @@ def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
 
 # PROXY
 def ShouldProxy(url):
-  try:
-    proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL, cacheTime=300).content.strip())
-  except:
-    proxy_pct = 0 # if we don't hear from the proxy server, assume the worst.
-    pass
+  if PROXY_THRESHOLD is None:
+    try:
+      proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL, cacheTime=300).content.strip())
+    except:
+      proxy_pct = 0 # if we don't hear from the proxy server, assume the worst.
+      pass
+  else:
+    proxy_pct = PROXY_THRESHOLD
 
   url_hash_val = float(int(''.join(list(Hash.MD5(url))[-2:]), 16)) / 255 * 100
-  if url_hash_val < proxy_pct:
+  if url_hash_val <= proxy_pct:
     Log('URL hash value of %d is below the threshold of %d, sending compressed JSON request.' % (url_hash_val, proxy_pct))
     return False
   else:
