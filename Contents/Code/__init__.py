@@ -21,7 +21,7 @@ ARTIST_INFO_URL = BASE_URL + '?method=artist.getInfo&artist=%s&autocorrect=1&lan
 ALBUM_SEARCH_URL = BASE_URL + '?method=album.search&album=%s&limit=%s&format=json&api_key=' + API_KEY
 ALBUM_INFO_URL = BASE_URL + '?method=album.getInfo&artist=%s&album=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
 
-ARTWORK_SIZE_RANKING = ['mega','extralarge','large','medium','small']
+ARTWORK_SIZE_RANKING = { 'mega':0 , 'extralarge':1 , 'large':2 } # Don't even try to add 'medium' or 'small' artwork.
 
 # Tunables.
 ARTIST_MATCH_LIMIT = 9 # Max number of artists to fetch for matching purposes.
@@ -95,7 +95,7 @@ class LastFmAgent(Agent.Artist):
       score = ARTIST_INITIAL_SCORE + bonus - dist - (i * 2)
       name = artist['name']
       Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' score: ' + str(score))
-      results.Append(MetadataSearchResult(id = id, name = name, lang  = lang, score = score))
+      results.Append(MetadataSearchResult(id=id, name=name, lang=lang, score=score))
 
 
   def get_album_bonus(self, media, artist_id):
@@ -132,18 +132,21 @@ class LastFmAgent(Agent.Artist):
     # Bio.
     metadata.summary = String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip()
 
-   # Artwork.
+    # Artwork.
+    valid_keys = []
     try:
-      valid_names = list()
       for image in artist['image']:
-        if image['#text'] and image['size']:
-          valid_names.append(image['#text'])
-          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
-      metadata.posters.validate_keys(valid_names)
+        try:
+          if image['size'] in ARTWORK_SIZE_RANKING:
+            valid_keys.insert(ARTWORK_SIZE_RANKING[image['size']],image['#text'])
+        except:
+          pass
+      if valid_keys:
+        metadata.posters[valid_keys[0]] = Proxy.Media(HTTP.Request(image['#text']))
+        metadata.posters.validate_keys(valid_keys[0])
     except:
       Log('Couldn\'t add artwork for artist.')
-      # raise
-
+      #raise
 
     # Genres.
     if Prefs['genres']:
@@ -277,13 +280,17 @@ class LastFmAlbumAgent(Agent.Album):
     metadata.title = album['name']
     
     # Artwork.
+    valid_keys = []
     try:
-      valid_names = list()
       for image in album['image']:
-        if image['#text'] and image['size']:
-          valid_names.append(image['#text'])
-          metadata.posters[image['#text']] = Proxy.Media(HTTP.Request(image['#text']), sort_order=ARTWORK_SIZE_RANKING.index(image['size'])+1)
-      metadata.posters.validate_keys(valid_names)
+        try:
+          if image['size'] in ARTWORK_SIZE_RANKING:
+            valid_keys.insert(ARTWORK_SIZE_RANKING[image['size']],image['#text'])
+        except:
+          pass
+      if valid_keys:
+        metadata.posters[valid_keys[0]] = Proxy.Media(HTTP.Request(image['#text']))
+        metadata.posters.validate_keys(valid_keys[0])
     except:
       Log('Couldn\'t add artwork for album.')
       # raise
@@ -298,6 +305,7 @@ class LastFmAlbumAgent(Agent.Album):
     # Genres.
     if Prefs['genres']:
       try:
+        metadata.genres.clear()
         if isinstance(album['toptags'], dict) and album['toptags'].has_key('tag'):
           if not isinstance(album['toptags']['tag'], list):
             album['toptags']['tag'] = [album['toptags']['tag']]
