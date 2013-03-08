@@ -57,10 +57,10 @@ class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
   #languages = [Locale.Language.English, Locale.Language.Korean]
   languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
-               Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
-               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean, 
-               Locale.Language.Russian]
-  
+               Locale.Language.Spanish, Locale.Language.German, Locale.Language.Polish,
+               Locale.Language.Italian, Locale.Language.Portuguese, Locale.Language.Japanese,
+               Locale.Language.Turkish, Locale.Language.Russian, Locale.Language.Chinese]
+
   def search(self, results, media, lang, manual):
 
     # Handle a couple of edge cases where artist search will give bad results.
@@ -165,11 +165,10 @@ class LastFmAgent(Agent.Artist):
   
 class LastFmAlbumAgent(Agent.Album):
   name = 'Last.fm'
-  #languages = [Locale.Language.English]
   languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
-               Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
-               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean,
-               Locale.Language.Russian]
+               Locale.Language.Spanish, Locale.Language.German, Locale.Language.Polish,
+               Locale.Language.Italian, Locale.Language.Portuguese, Locale.Language.Japanese,
+               Locale.Language.Turkish, Locale.Language.Russian, Locale.Language.Chinese]
 
   fallback_agent = 'com.plexapp.agents.allmusic'
   
