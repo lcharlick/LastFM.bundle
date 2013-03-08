@@ -58,7 +58,8 @@ class LastFmAgent(Agent.Artist):
   #languages = [Locale.Language.English, Locale.Language.Korean]
   languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
                Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
-               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean]
+               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean, 
+               Locale.Language.Russian]
   
   def search(self, results, media, lang, manual):
 
@@ -85,7 +86,8 @@ class LastFmAgent(Agent.Artist):
         Log('Skipping %s with only %d listeners.' % (artist['name'], artist['listeners']))
         continue
 
-      id = String.Quote(artist['name'])
+      # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
+      id = String.Quote(artist['name'].decode('utf-8').encode('utf-8'))
       # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance and order.
       dist = Util.LevenshteinDistance(artist['name'].lower(), media.artist.lower())
       if i < ARTIST_ALBUMS_MATCH_LIMIT:
@@ -166,7 +168,9 @@ class LastFmAlbumAgent(Agent.Album):
   #languages = [Locale.Language.English]
   languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
                Locale.Language.Spanish, Locale.Language.Dutch, Locale.Language.German,
-               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean]
+               Locale.Language.Italian, Locale.Language.Danish, Locale.Language.Korean,
+               Locale.Language.Russian]
+
   fallback_agent = 'com.plexapp.agents.allmusic'
   
   def search(self, results, media, lang, manual):
@@ -225,7 +229,7 @@ class LastFmAlbumAgent(Agent.Album):
           artist = album['artist']
       else:
         artist = ''
-      id = media.parent_metadata.id + '/' + String.Quote(name)
+      id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8'))
       dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
       artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
       score = ALBUM_INITIAL_SCORE - dist - artist_dist
@@ -247,7 +251,7 @@ class LastFmAlbumAgent(Agent.Album):
     return sorted(matches, key=lambda k: k['score'], reverse=True)
   
   def get_track_bonus(self, media, name, lang):
-    tracks = GetTracks(media.parent_metadata.id, name, lang)
+    tracks = GetTracks(media.parent_metadata.id, String.Quote(name.decode('utf-8').encode('utf-8')), lang)
     bonus = 0
     try:
       for i, t in enumerate(media.children):
@@ -316,12 +320,12 @@ class LastFmAlbumAgent(Agent.Album):
         # raise
 
 def SearchArtists(artist, limit=10, legacy=False):
+  artists = []
   url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit)
   # PROXY
   if ShouldProxy(url):
     try:
       artist = SafeStrip(artist.lower())
-      artists = []
       for lfm_artist in lastfm.SearchArtists(artist,limit=5)[0]:
         (url, name, image, listeners) = lfm_artist
         img = {}
@@ -336,12 +340,12 @@ def SearchArtists(artist, limit=10, legacy=False):
       response = GetJSON(url)
       if response.has_key('error'):
         Log('Error retrieving artist search results: ' + response['message'])
-        return []
+        return artists
       else:
         artist_results = response['results']
       if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
         Log('No results for artist search.')
-        return []
+        return artists
       # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
       if not isinstance(artist_results['artistmatches']['artist'], list):
         artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
@@ -353,11 +357,11 @@ def SearchArtists(artist, limit=10, legacy=False):
 
 
 def SearchAlbums(album, limit=10, legacy=False):
+  albums = []
   url = ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit)
   # PROXY
   if ShouldProxy(url):
     try:
-      albums = []
       (xml_albums, more) = lastfm.SearchAlbums(album)
       for album in xml_albums:
         (name, artist, thumb, url) = album
@@ -372,19 +376,20 @@ def SearchAlbums(album, limit=10, legacy=False):
       response = GetJSON(url)
       if response.has_key('error'):
         Log('Error retrieving album search results: ' + response['message'])
-        return []
+        return albums
       else:
         album_results = response['results']
       if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
-        Log('No results for artist search.')
-        return []
+        Log('No results for album search.')
+        return albums
       # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
       if not isinstance(album_results['albummatches']['album'], list):
         album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
+      albums = album_results['albummatches']['album']
     except:
       Log('Error retrieving album search results.')
       # raise
-    return album_results['albummatches']['album']
+    return albums
 
 
 def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=True):
@@ -393,7 +398,6 @@ def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=Tru
   # PROXY
   if ShouldProxy(url) and legacy:
     try:
-      albums = []
       for album in lastfm.ArtistAlbums(String.Unquote(artist)):
         (name, artist_name, thumb, url) = album
         albums.append({'name':name})
@@ -449,7 +453,7 @@ def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=Tru
 
 
 def GetArtist(id, lang='en'):
-  url = ARTIST_INFO_URL % (String.Quote(String.Unquote(id)), lang)
+  url = ARTIST_INFO_URL % (id, lang)
   # PROXY
   if ShouldProxy(url):
     try:
@@ -486,7 +490,7 @@ def GetArtist(id, lang='en'):
 
 
 def GetAlbum(artist_id, album_id, lang='en'):
-  url = ALBUM_INFO_URL % (String.Quote(String.Unquote(artist_id)), String.Quote(String.Unquote(album_id)), lang)
+  url = ALBUM_INFO_URL % (artist_id, album_id, lang)
   # PROXY
   if ShouldProxy(url):
     try:
@@ -521,13 +525,13 @@ def GetAlbum(artist_id, album_id, lang='en'):
       return {}
 
 
-def GetTracks(artist_id, album_name, lang='en'):
-  url = ALBUM_INFO_URL % (String.Quote(String.Unquote(artist_id)), String.Quote(String.Unquote(album_name)), lang)
+def GetTracks(artist_id, album_id, lang='en'):
+  tracks = []
+  url = ALBUM_INFO_URL % (artist_id, album_id, lang)
   # PROXY
   if ShouldProxy(url):
     try:
-      tracks = []
-      album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(String.Unquote(artist_id), True), String.Quote(album_name, True)), sleep=0.7)
+      album = XML.ElementFromURL(lastfm.ALBUM_INFO % (String.Quote(String.Unquote(artist_id), True), String.Quote(String.Unquote(album_id), True)), sleep=0.7)
       xml_tracks = album.xpath('//track/name')
       for track in xml_tracks:
         tracks.append({'name':track.text})
@@ -541,7 +545,7 @@ def GetTracks(artist_id, album_name, lang='en'):
       tracks_result = GetJSON(url)
       if tracks_result.has_key('error'):
         Log('Error retrieving tracks to apply track bonus: ' + tracks_result['message'])
-        return []
+        return tracks
       tracks = tracks_result['album']['tracks']['track']
       if not isinstance(tracks, list):
         tracks = [tracks]
@@ -549,7 +553,7 @@ def GetTracks(artist_id, album_name, lang='en'):
     except:
       Log('Error retrieving tracks to apply track bonus.')
       # raise
-      return []
+      return tracks
 
 
 def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
