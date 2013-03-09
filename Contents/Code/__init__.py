@@ -281,7 +281,7 @@ class LastFmAlbumAgent(Agent.Album):
 
     if matches:
       return sorted(matches, key=lambda k: k['score'], reverse=True)
-    else
+    else:
       return matches
   
   def get_track_bonus(self, media, name, lang):
