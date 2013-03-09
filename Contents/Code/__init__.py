@@ -246,36 +246,43 @@ class LastFmAlbumAgent(Agent.Album):
     res = []
     matches = []
     for album in albums:
-      name = album['name']
-      if album.has_key('artist'):
-        if not isinstance(album['artist'], unicode) and not isinstance(album['artist'], str):
-          artist = album['artist']['name']
+      try:
+        name = album['name']
+        if album.has_key('artist'):
+          if not isinstance(album['artist'], unicode) and not isinstance(album['artist'], str):
+            artist = album['artist']['name']
+          else:
+            artist = album['artist']
         else:
-          artist = album['artist']
-      else:
-        artist = ''
-      id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8'))
-      dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
-      artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
-      score = ALBUM_INITIAL_SCORE - dist - artist_dist
-      if manual:
-        score += ALBUM_MATCH_MANUAL_BOOST
-      res.append({'id':id, 'name':name, 'lang':lang, 'score':score})
+          artist = ''
+        id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8'))
+        dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
+        artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
+        score = ALBUM_INITIAL_SCORE - dist - artist_dist
+        if manual:
+          score += ALBUM_MATCH_MANUAL_BOOST
+        res.append({'id':id, 'name':name, 'lang':lang, 'score':score})
+      except:
+        Log('Error scoring album.')
 
-    res = sorted(res, key=lambda k: k['score'], reverse=True)
-    for i, result in enumerate(res):
-      # Querying for track bonus is expensive (each one is an API request), so only do it for the top N results.
-      if i < ALBUM_TRACK_BONUS_MATCH_LIMIT:
-        bonus = self.get_track_bonus(media, result['name'], lang)
-        res[i]['score'] = res[i]['score'] + bonus
-      if res[i]['score'] >= ALBUM_MATCH_MIN_SCORE:
-        Log('Album result: ' + result['name'] + ' album bonus: ' + str(bonus) + ' score: ' + str(result['score']))
-        matches.append(res[i])
-      else:
-        Log('Skipping %d album results that don\'t meet the minimum score of %d.' % (len(res) - i, ALBUM_MATCH_MIN_SCORE))
-        break
-    
-    return sorted(matches, key=lambda k: k['score'], reverse=True)
+    if res:
+      res = sorted(res, key=lambda k: k['score'], reverse=True)
+      for i, result in enumerate(res):
+          # Querying for track bonus is expensive (each one is an API request), so only do it for the top N results.
+          if i < ALBUM_TRACK_BONUS_MATCH_LIMIT:
+            bonus = self.get_track_bonus(media, result['name'], lang)
+            res[i]['score'] = res[i]['score'] + bonus
+          if res[i]['score'] >= ALBUM_MATCH_MIN_SCORE:
+            Log('Album result: ' + result['name'] + ' album bonus: ' + str(bonus) + ' score: ' + str(result['score']))
+            matches.append(res[i])
+          else:
+            Log('Skipping %d album results that don\'t meet the minimum score of %d.' % (len(res) - i, ALBUM_MATCH_MIN_SCORE))
+            break
+
+    if matches:
+      return sorted(matches, key=lambda k: k['score'], reverse=True)
+    else
+      return matches
   
   def get_track_bonus(self, media, name, lang):
     tracks = GetTracks(media.parent_metadata.id, String.Quote(name.decode('utf-8').encode('utf-8')), lang)
