@@ -5,7 +5,7 @@ import time
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
 PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.  
-PROXY_THRESHOLD = 100 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
+PROXY_THRESHOLD = 50 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
 # END PROXY
 
 # Last.fm API
@@ -88,7 +88,7 @@ class LastFmAgent(Agent.Artist):
         continue
 
       # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
-      id = String.Quote(artist['name'].decode('utf-8').encode('utf-8'))
+      id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
       # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance and order.
       dist = Util.LevenshteinDistance(artist['name'].lower(), media.artist.lower())
       if i < ARTIST_ALBUMS_MATCH_LIMIT:
@@ -255,7 +255,7 @@ class LastFmAlbumAgent(Agent.Album):
             artist = album['artist']
         else:
           artist = ''
-        id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8'))
+        id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
         dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
         artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
         score = ALBUM_INITIAL_SCORE - dist - artist_dist
@@ -285,7 +285,7 @@ class LastFmAlbumAgent(Agent.Album):
       return matches
   
   def get_track_bonus(self, media, name, lang):
-    tracks = GetTracks(media.parent_metadata.id, String.Quote(name.decode('utf-8').encode('utf-8')), lang)
+    tracks = GetTracks(media.parent_metadata.id, String.Quote(name.decode('utf-8').encode('utf-8')).replace(' ','+'), lang)
     bonus = 0
     try:
       for i, t in enumerate(media.children):
