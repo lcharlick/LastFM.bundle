@@ -22,14 +22,16 @@ ALBUM_SEARCH_URL = BASE_URL + '?method=album.search&album=%s&limit=%s&format=jso
 ALBUM_INFO_URL = BASE_URL + '?method=album.getInfo&artist=%s&album=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
 
 ARTWORK_SIZE_RANKING = { 'mega':0 , 'extralarge':1 , 'large':2 } # Don't even try to add 'medium' or 'small' artwork.
+VARIOUS_ARTISTS_POSTER = 'http://userserve-ak.last.fm/serve/252/46209667.png'
 
 # Tunables.
 ARTIST_MATCH_LIMIT = 9 # Max number of artists to fetch for matching purposes.
 ARTIST_ALBUMS_MATCH_LIMIT = 5 # Max number of artist matches to try for album bonus.  Each one incurs an additional API request.
-ARTIST_ALBUMS_LIMIT = 100 # How many albums do we want to grab for artist album matching bonus.
+ARTIST_ALBUMS_LIMIT = 50 # Number of albums by artist to grab for artist matching bonus and quick album match.
 ARTIST_MIN_LISTENER_THRESHOLD = 1000 # Minimum number of listeners for an artist to be considered credible.
 ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album searches with no artist info (e.g. Various Artists).
 ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
+ALBUM_MATCH_MANUAL_BOOST = 10 # Amount of boost to apply to album matches when doing a manual search.
 ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
 ALBUM_TRACK_BONUS_MATCH_LIMIT = 5 # Max number of albums to try for track bonus.  Each one incurs at most one API request per album.
 QUERY_SLEEP_TIME = 0.5 # How long to sleep before firing off each API request.
@@ -51,7 +53,6 @@ RE_STRIP_PARENS = Regex('\([^)]*\)')
 
 def Start():
   HTTP.CacheTime = CACHE_1WEEK
-  HTTP.Headers['Accept-Encoding'] = 'gzip,deflate,sdch'
 
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
@@ -68,13 +69,13 @@ class LastFmAgent(Agent.Artist):
       return
       
     if media.artist == 'Various Artists':
-      results.Append(MetadataSearchResult(id = 'Various%20Artists', name= 'Various Artists', thumb = 'http://userserve-ak.last.fm/serve/252/46209667.png', lang  = lang, score = 100))
+      results.Append(MetadataSearchResult(id = 'Various%20Artists', name= 'Various Artists', thumb = VARIOUS_ARTISTS_POSTER, lang  = lang, score = 100))
       return
     
     # Search for artist.
     Log('Artist search: ' + media.artist)
     if manual:
-      Log('Custom search.')
+      Log('Running custom search...')
     artists = []
     artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
 
@@ -103,7 +104,7 @@ class LastFmAgent(Agent.Artist):
   def get_album_bonus(self, media, artist_id):
     Log('Fetching artist\'s albums and applying album bonus.')
     bonus = 0
-    albums = GetAlbumsByArtist(artist_id, limit=ARTIST_ALBUMS_LIMIT)
+    albums = GetAlbumsByArtist(artist_id, albums=[], limit=ARTIST_ALBUMS_LIMIT)
     try:
       for a in media.children:
         media_album = a.title.lower()
@@ -135,20 +136,23 @@ class LastFmAgent(Agent.Artist):
     metadata.summary = String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip()
 
     # Artwork.
-    valid_keys = []
-    try:
-      for image in artist['image']:
-        try:
-          if image['size'] in ARTWORK_SIZE_RANKING:
-            valid_keys.insert(ARTWORK_SIZE_RANKING[image['size']],image['#text'])
-        except:
-          pass
-      if valid_keys:
-        metadata.posters[valid_keys[0]] = Proxy.Media(HTTP.Request(image['#text']))
-        metadata.posters.validate_keys(valid_keys[0])
-    except:
-      Log('Couldn\'t add artwork for artist.')
-      #raise
+    if artist['name'] == 'Various Artists':
+      metadata.posters[VARIOUS_ARTISTS_POSTER] = Proxy.Media(HTTP.Request(VARIOUS_ARTISTS_POSTER))
+    else:
+      valid_keys = []
+      try:
+        for image in artist['image']:
+          try:
+            if image['size'] in ARTWORK_SIZE_RANKING:
+              valid_keys.insert(ARTWORK_SIZE_RANKING[image['size']],image['#text'])
+          except:
+            pass
+        if valid_keys:
+          metadata.posters[valid_keys[0]] = Proxy.Media(HTTP.Request(image['#text']))
+          metadata.posters.validate_keys(valid_keys[0])
+      except:
+        Log('Couldn\'t add artwork for artist.')
+        #raise
 
     # Genres.
     if Prefs['genres']:
@@ -183,23 +187,45 @@ class LastFmAlbumAgent(Agent.Album):
     # Search for album.
     Log('Album search: ' + media.title)
     if manual:
-      Log('Custom search.')
+      Log('Running custom search...')
     
     albums = []
-    # Search for albums by artist if not 'Various Artists', otherwise search for the album directly.
+    found_good_match = False
+    # First search for albums by artist if not 'Various Artists', if we don't get a good match, search directly.
     if media.parent_metadata.id != 'Various%20Artists':
-      albums = self.score_albums(media, lang, GetAlbumsByArtist(media.parent_metadata.id))
-    if not albums or not albums[0].has_key('score') or albums[0]['score'] <= ALBUM_MATCH_GOOD_SCORE:
-      Log('No good matches found in ' + str(len(albums)) + ' results for albums by artist search.  Searching by album title.')
-      albums.extend(self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT)))
-      if albums:
-        albums = sorted(albums, key=lambda k: k['score'], reverse=True)
-    if not albums or not albums[0].has_key('score') or albums[0]['score'] <= ALBUM_MATCH_GOOD_SCORE:
-      stripped_title = RE_STRIP_PARENS.sub('',media.title).lower()
-      Log('No good matches found in album title search for %s, searching for %s.' % (media.title.lower(), stripped_title))
-      albums.extend(self.score_albums(media, lang, SearchAlbums(stripped_title)))
-      if albums:
-        albums = sorted(albums, key=lambda k: k['score'], reverse=True)
+      if not manual:
+        # Let's start with the first N albums (ideally a single API request)...
+        albums = self.score_albums(media, lang, GetAlbumsByArtist(media.parent_metadata.id, albums=[], limit=ARTIST_ALBUMS_LIMIT))
+        if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
+          # We found a good match in the first set of results, stop looking.
+          found_good_match = True
+          Log('Good album match found (quick search)  with score: ' + str(albums[0]['score']))
+      if not found_good_match or manual:
+        if manual:
+          Log('Custom search terms specified, fetching all albums by artist.')
+        else:
+          Log('No good matches found in first ' + str(len(albums)) + ' albums, fetching all albums by artist.')
+        albums = self.score_albums(media, lang, GetAlbumsByArtist(media.parent_metadata.id, albums=[]), manual=manual)
+        if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
+          Log('Good album match found with score: ' + str(albums[0]['score']))
+          found_good_match = True
+        else:
+          Log('No good matches found in ' + str(len(albums)) + ' albums by artist.')
+
+    # Either we're looking at Various Artists, or albums by artist search did not contain a good match.
+    if not found_good_match or albums:
+      albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
+      if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
+        # Found a good match, stop looking.
+        found_good_match = True
+        Log('Found a good match for album search.')
+      if not albums or not found_good_match:
+        stripped_title = RE_STRIP_PARENS.sub('',media.title).lower()
+        Log('No good matches found in album search for %s, searching for %s.' % (media.title.lower(), stripped_title))
+        # This time we extend the results  and re-sort so we consider the best-scoring matches from both searches.
+        albums  = self.score_albums(media, lang, SearchAlbums(stripped_title), manual=manual) + albums
+        if albums:
+          albums = sorted(albums, key=lambda k: k['score'], reverse=True)
 
     # Dedupe albums.
     seen = {}
@@ -216,7 +242,7 @@ class LastFmAlbumAgent(Agent.Album):
     for album in albums:
       results.Append(MetadataSearchResult(id = album['id'], name = album['name'], lang = album['lang'], score = album['score']))
 
-  def score_albums(self, media, lang, albums):
+  def score_albums(self, media, lang, albums, manual=False):
     res = []
     matches = []
     for album in albums:
@@ -232,6 +258,8 @@ class LastFmAlbumAgent(Agent.Album):
       dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
       artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
       score = ALBUM_INITIAL_SCORE - dist - artist_dist
+      if manual:
+        score += ALBUM_MATCH_MANUAL_BOOST
       res.append({'id':id, 'name':name, 'lang':lang, 'score':score})
 
     res = sorted(res, key=lambda k: k['score'], reverse=True)
