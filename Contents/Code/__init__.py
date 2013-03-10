@@ -5,7 +5,7 @@ import time
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
 PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.  
-PROXY_THRESHOLD = 50 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
+PROXY_THRESHOLD = 0 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
 # END PROXY
 
 # Last.fm API
@@ -493,21 +493,21 @@ def GetArtist(id, lang='en'):
     try:
       xml_artist = XML.ElementFromURL(lastfm.ARTIST_INFO % String.Quote(String.Unquote(id), True))[0]
       image = []
-      for xml_image in xml_artist.xpath('//artist/image'):
+      for xml_image in xml_artist.xpath('//lfm/artist/image'):
         image.append({'#text':xml_image.text, 'size':xml_image.get('size')})
       tags = []
-      for xml_tag in xml_artist.xpath('//artist/tags/tag/name'):
+      for xml_tag in xml_artist.xpath('//lfm/artist/tags/tag/name'):
         tags.append({'name':xml_tag})
       artist = {
-        'name':String.Unquote(xml_artist.xpath('//artist/name')[0].text, True),
-        'bio':{'content':xml_artist.xpath('//bio/content')[0].text},
+        'name':String.Unquote(xml_artist.xpath('//lfm/artist/name')[0].text, True),
+        'bio':{'content':xml_artist.xpath('//lfm/artist/bio/content')[0].text},
         'image':image,
         'toptags':{'tag':tags}
       }
       return artist
     except:
       Log('Error retreiving artist metadata (legacy request).')
-      # raise
+      #raise
       return {}
   else:
   # END PROXY
