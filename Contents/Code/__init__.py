@@ -216,7 +216,7 @@ class LastFmAlbumAgent(Agent.Album):
     if not found_good_match or albums:
       # PROXY
       # Only make these extra requests in the event of subpar AlbumsByArtist matches if we're okay with cache misses (old agent never makes them).
-      if ShouldProxy(media.parent_metadata.id + '/' + media.title) or media.parent_metadata.id == 'Various%20Artists':
+      if not ShouldProxy(media.parent_metadata.id + '/' + media.title) or media.parent_metadata.id == 'Various%20Artists':
       # END PROXY  
         albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
         if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
