@@ -4,7 +4,8 @@ import time
 
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
-PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.  
+PROXY_THRESHOLD_URL = 'http://www.plexapp.com/agents/com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.
+PROXY_THRESHOLD_CACHE_TIME = CACHE_1DAY # How long to cache the proxy threshold value returned from the above.
 PROXY_THRESHOLD = 0 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
 # END PROXY
 
@@ -617,7 +618,7 @@ def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
 def ShouldProxy(url):
   if PROXY_THRESHOLD is None:
     try:
-      proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL, cacheTime=300).content.strip())
+      proxy_pct = int(HTTP.Request(PROXY_THRESHOLD_URL, cacheTime=PROXY_THRESHOLD_CACHE_TIME).content.strip())
     except:
       proxy_pct = 0 # if we don't hear from the proxy server, assume the worst.
       pass
