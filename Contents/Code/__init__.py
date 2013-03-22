@@ -5,7 +5,7 @@ import time
 # PROXY
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
 PROXY_THRESHOLD_URL = 'http://plexapp.com/proxy_status.php?agent=com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.  
-PROXY_THRESHOLD = 100 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
+PROXY_THRESHOLD = 0 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
 # END PROXY
 
 # Last.fm API
@@ -214,18 +214,23 @@ class LastFmAlbumAgent(Agent.Album):
 
     # Either we're looking at Various Artists, or albums by artist search did not contain a good match.
     if not found_good_match or albums:
-      albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
-      if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
-        # Found a good match, stop looking.
-        found_good_match = True
-        Log('Found a good match for album search.')
-      if not albums or not found_good_match:
-        stripped_title = RE_STRIP_PARENS.sub('',media.title).lower()
-        Log('No good matches found in album search for %s, searching for %s.' % (media.title.lower(), stripped_title))
-        # This time we extend the results  and re-sort so we consider the best-scoring matches from both searches.
-        albums  = self.score_albums(media, lang, SearchAlbums(stripped_title), manual=manual) + albums
-        if albums:
-          albums = sorted(albums, key=lambda k: k['score'], reverse=True)
+      # PROXY
+      # Only make these extra requests in the event of subpar AlbumsByArtist matches if we're okay with cache misses (old agent never makes them).
+      if ShouldProxy(media.parent_metadata.id + '/' + media.title) or media.parent_metadata.id == 'Various%20Artists':
+      # END PROXY  
+        albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
+        if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
+          # Found a good match, stop looking.
+          found_good_match = True
+          Log('Found a good match for album search.')
+        if not albums or not found_good_match:
+          stripped_title = RE_STRIP_PARENS.sub('',media.title).lower()
+          if stripped_title != media.parent_metadata.id:
+            Log('No good matches found in album search for %s, searching for %s.' % (media.title.lower(), stripped_title))
+            # This time we extend the results  and re-sort so we consider the best-scoring matches from both searches.
+            albums  = self.score_albums(media, lang, SearchAlbums(stripped_title), manual=manual) + albums
+          if albums:
+            albums = sorted(albums, key=lambda k: k['score'], reverse=True)
 
     # Dedupe albums.
     seen = {}
