@@ -6,7 +6,7 @@ import time
 import lastfm # This is only requried while we're emulating legacy calls for the proxy.
 PROXY_THRESHOLD_URL = 'http://www.plexapp.com/agents/com.plexapp.agents.lastfm' # This should return desired percentage of "new style" requests.
 PROXY_THRESHOLD_CACHE_TIME = CACHE_1DAY # How long to cache the proxy threshold value returned from the above.
-PROXY_THRESHOLD = 0 # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
+PROXY_THRESHOLD = None # Hard-coded percentage of "new style" requests or None to make HTTP request instead.
 # END PROXY
 
 # Last.fm API
