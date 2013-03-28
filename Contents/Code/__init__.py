@@ -13,7 +13,7 @@ PROXY_THRESHOLD = None # Hard-coded percentage of "new style" requests or None t
 API_KEY = 'd5310352469c2631e5976d0f4a599773'
 
 # BASE_URL = 'http://ws.audioscrobbler.com/2.0/'
-BASE_URL = 'http://lastfm.plexapp.com/2.0/'
+BASE_URL = 'http://lastfm-z.plexapp.com/2.0/'
 
 ARTIST_SEARCH_URL = BASE_URL + '?method=artist.search&artist=%s&limit=%s&format=json&api_key=' + API_KEY
 ARTIST_ALBUM_SEARCH_URL = BASE_URL + '?method=artist.gettopalbums&artist=%s&page=%s&limit=%s&format=json&api_key=' + API_KEY
