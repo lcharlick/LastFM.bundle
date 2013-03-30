@@ -263,7 +263,11 @@ class LastFmAlbumAgent(Agent.Album):
           artist = ''
         id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
         dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
-        artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
+        if media.parent_metadata.id == 'Various%20Artists' and artist != 'Various Artists':
+          artist_dist = 1000 # Penalize spurious Various Artists mismatches heavily (skip them)
+          Log('Penalizing bad result for Various Artists search: ' + artist)
+        else:
+          artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
         score = ALBUM_INITIAL_SCORE - dist - artist_dist
         if manual:
           score += ALBUM_MATCH_MANUAL_BOOST
