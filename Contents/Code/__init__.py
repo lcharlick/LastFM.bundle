@@ -15,7 +15,7 @@ API_KEY = 'd5310352469c2631e5976d0f4a599773'
 # BASE_URL = 'http://ws.audioscrobbler.com/2.0/'
 BASE_URL = 'http://lastfm-z.plexapp.com/2.0/'
 
-ARTIST_SEARCH_URL = BASE_URL + '?method=artist.search&artist=%s&limit=%s&format=json&api_key=' + API_KEY
+ARTIST_SEARCH_URL = BASE_URL + '?method=artist.search&artist=%s&page=%d&limit=%d&format=json&api_key=' + API_KEY
 ARTIST_ALBUM_SEARCH_URL = BASE_URL + '?method=artist.gettopalbums&artist=%s&page=%s&limit=%s&format=json&api_key=' + API_KEY
 ARTIST_INFO_URL = BASE_URL + '?method=artist.getInfo&artist=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
 
@@ -27,12 +27,14 @@ VARIOUS_ARTISTS_POSTER = 'http://userserve-ak.last.fm/serve/252/46209667.png'
 
 # Tunables.
 ARTIST_MATCH_LIMIT = 9 # Max number of artists to fetch for matching purposes.
+ARTIST_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
+ARTIST_MANUAL_MATCH_LIMIT = 120 # Number of artists to fetch when trying harder for manual searches.  Multiple API hits.
+ARTIST_SEARCH_PAGE_SIZE = 30 # Number of artists in a search result page.  Asking for more has no effect.
 ARTIST_ALBUMS_MATCH_LIMIT = 5 # Max number of artist matches to try for album bonus.  Each one incurs an additional API request.
 ARTIST_ALBUMS_LIMIT = 50 # Number of albums by artist to grab for artist matching bonus and quick album match.
 ARTIST_MIN_LISTENER_THRESHOLD = 1000 # Minimum number of listeners for an artist to be considered credible.
 ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album searches with no artist info (e.g. Various Artists).
 ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
-ALBUM_MATCH_MANUAL_BOOST = 10 # Amount of boost to apply to album matches when doing a manual search.
 ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
 ALBUM_TRACK_BONUS_MATCH_LIMIT = 5 # Max number of albums to try for track bonus.  Each one incurs at most one API request per album.
 QUERY_SLEEP_TIME = 0.5 # How long to sleep before firing off each API request.
@@ -44,6 +46,7 @@ NAME_DISTANCE_THRESHOLD = 2 # How close do album/track names need to be to match
 ARTIST_INITIAL_SCORE = 90 # Starting point for artists before bonus/deductions.
 ARTIST_ALBUM_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good artist/album match.
 ARTIST_ALBUM_MAX_BONUS = 15 # Maximum number of bonus points to give artists with good album matches.
+ARTIST_LENGTH_PENALTY_COEFFICIENT = 2 # How much to penzlize for each character of name length difference.
 ALBUM_INITIAL_SCORE = 92 # Starting point for albums before bonus/deductions.
 ALBUM_TRACK_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good album/track match.
 ALBUM_TRACK_MAX_BONUS = 20 # Maximum number of bonus points to give to albums with good track name matches.
@@ -78,10 +81,21 @@ class LastFmAgent(Agent.Artist):
     if manual:
       Log('Running custom search...')
     artists = []
+    artist_results = []
     artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
+    self.score_artists(artists, media, lang, artist_results)
 
+    if manual and not artist_results:
+      # We didn't find a good match in the top N.  If this is a manual/custom search, try harder.
+      Log('Fetching additional artists for custom search...')
+      artists = SearchArtists(media.artist, ARTIST_MANUAL_MATCH_LIMIT)
+      self.score_artists(artists, media, lang, artist_results)
+
+    for artist in artist_results:
+      results.Append(artist)
+
+  def score_artists(self, artists, media, lang, artist_results):
     for i, artist in enumerate(artists):
-      
       # If there's only a single result, it will not include the 'listeners' key.
       # Distrust artists with fewer than N listeners.
       if artist.has_key('listeners') and artist['listeners'] < ARTIST_MIN_LISTENER_THRESHOLD:
@@ -90,16 +104,21 @@ class LastFmAgent(Agent.Artist):
 
       # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
       id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
-      # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance and order.
+      # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance.
       dist = Util.LevenshteinDistance(artist['name'].lower(), media.artist.lower())
+      # Penalize difference in length (further differentiate common mismatches, e.g. "Cave" matching "Nick Cave")
+      dist = dist + ARTIST_LENGTH_PENALTY_COEFFICIENT * abs(len(artist['name']) - len(media.artist))
       if i < ARTIST_ALBUMS_MATCH_LIMIT:
         bonus = self.get_album_bonus(media, artist_id=id)
       else:
         bonus = 0
-      score = ARTIST_INITIAL_SCORE + bonus - dist - (i * 2)
+      score = ARTIST_INITIAL_SCORE + bonus - dist
       name = artist['name']
       Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' score: ' + str(score))
-      results.Append(MetadataSearchResult(id=id, name=name, lang=lang, score=score))
+      if score >= ARTIST_MATCH_MIN_SCORE:
+        artist_results.append(MetadataSearchResult(id=id, name=name, lang=lang, score=score))
+      else:
+        Log('Skipping artist, didn\'t meet minimum score of ' + str(ARTIST_MATCH_MIN_SCORE))
 
 
   def get_album_bonus(self, media, artist_id):
@@ -269,8 +288,6 @@ class LastFmAlbumAgent(Agent.Album):
         else:
           artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
         score = ALBUM_INITIAL_SCORE - dist - artist_dist
-        if manual:
-          score += ALBUM_MATCH_MANUAL_BOOST
         res.append({'id':id, 'name':name, 'lang':lang, 'score':score})
       except:
         Log('Error scoring album.')
@@ -365,7 +382,7 @@ class LastFmAlbumAgent(Agent.Album):
 
 def SearchArtists(artist, limit=10, legacy=False):
   artists = []
-  url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), limit)
+  url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), 1, limit)
   # PROXY
   if ShouldProxy(url):
     try:
@@ -380,24 +397,27 @@ def SearchArtists(artist, limit=10, legacy=False):
       # raise
   else:
   # END PROXY
-    try: 
-      response = GetJSON(url)
-      if response.has_key('error'):
-        Log('Error retrieving artist search results: ' + response['message'])
-        return artists
-      else:
-        artist_results = response['results']
-      if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
-        Log('No results for artist search.')
-        return artists
-      # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
-      if not isinstance(artist_results['artistmatches']['artist'], list):
-        artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
-      artists = artist_results['artistmatches']['artist']
-    except:
-      Log('Error retrieving artist search results.')
-      # raise
-    return artists
+    lim = min(limit,ARTIST_SEARCH_PAGE_SIZE)
+    for i in range((limit-1)/ARTIST_SEARCH_PAGE_SIZE+1):
+      url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), i+1, lim)
+      try: 
+        response = GetJSON(url)
+        if response.has_key('error'):
+          Log('Error retrieving artist search results: ' + response['message'])
+          return artists
+        else:
+          artist_results = response['results']
+        if artist_results.has_key('artistmatches') and not isinstance(artist_results['artistmatches'],dict) and not isinstance(artist_results['artistmatches'],list):
+          Log('No results for artist search.')
+          return artists
+        # Note: If a single result is returned, it will not be in list form, it will be a single 'artist' dict, so we fix it to be consistent.
+        if not isinstance(artist_results['artistmatches']['artist'], list):
+          artist_results['artistmatches'] = {'artist':[artist_results['artistmatches']['artist']]}
+        artists = artists + artist_results['artistmatches']['artist']
+      except:
+        Log('Error retrieving artist search results.')
+        # raise
+  return artists
 
 
 def SearchAlbums(album, limit=10, legacy=False):
