@@ -107,7 +107,7 @@ class LastFmAgent(Agent.Artist):
       # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance.
       dist = Util.LevenshteinDistance(artist['name'].lower(), media.artist.lower())
       # Penalize difference in length (further differentiate common mismatches, e.g. "Cave" matching "Nick Cave")
-      dist = dist + ARTIST_LENGTH_PENALTY_COEFFICIENT * abs(len(artist['name']) - len(media.artist))
+      dist = dist + ARTIST_LENGTH_PENALTY_COEFFICIENT * abs(len(artist['name'].decode('utf-8').encode('utf-8')) - len(media.artist.decode('utf-8').encode('utf-8')))
       if i < ARTIST_ALBUMS_MATCH_LIMIT:
         bonus = self.get_album_bonus(media, artist_id=id)
       else:
@@ -458,7 +458,7 @@ def SearchAlbums(album, limit=10, legacy=False):
 
 def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=True):
   # Limit of 0 is taken to mean 'all'.
-  url = ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist)), page, pg_size)
+  url = ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist.lower())), page, pg_size)
   # PROXY
   if ShouldProxy(url) and legacy:
     try:
@@ -517,7 +517,7 @@ def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=Tru
 
 
 def GetArtist(id, lang='en'):
-  url = ARTIST_INFO_URL % (id, lang)
+  url = ARTIST_INFO_URL % (id.lower(), lang)
   # PROXY
   if ShouldProxy(url):
     try:
@@ -554,7 +554,7 @@ def GetArtist(id, lang='en'):
 
 
 def GetAlbum(artist_id, album_id, lang='en'):
-  url = ALBUM_INFO_URL % (artist_id, album_id, lang)
+  url = ALBUM_INFO_URL % (artist_id.lower(), album_id.lower(), lang)
   # PROXY
   if ShouldProxy(url):
     try:
@@ -591,7 +591,7 @@ def GetAlbum(artist_id, album_id, lang='en'):
 
 def GetTracks(artist_id, album_id, lang='en'):
   tracks = []
-  url = ALBUM_INFO_URL % (artist_id, album_id, lang)
+  url = ALBUM_INFO_URL % (artist_id.lower(), album_id.lower(), lang)
   # PROXY
   if ShouldProxy(url):
     try:
