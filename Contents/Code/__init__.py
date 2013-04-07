@@ -235,11 +235,14 @@ class LastFmAlbumAgent(Agent.Album):
     # Either we're looking at Various Artists, or albums by artist search did not contain a good match.
     if not found_good_match or albums:
       # PROXY
-      # Only make these extra requests in the event of subpar AlbumsByArtist matches if we're okay with cache misses (old agent never makes them).
-      #if not ShouldProxy(media.parent_metadata.id + '/' + media.title) or media.parent_metadata.id == 'Various%20Artists':
-      if media.parent_metadata.id == 'Various%20Artists':
+      # Only make these extra requests in the event of subpar AlbumsByArtist matches if we're below the proxy threshold to phase them in gradually.
+      if not ShouldProxy(media.parent_metadata.id + '/' + media.title) or media.parent_metadata.id == 'Various%20Artists':
+        if media.parent_metadata.id == 'Various%20Artists':
+          various = True
+        else:
+          various = False
       # END PROXY  
-        albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
+        albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT, various=various), manual=manual) + albums
         if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
           # Found a good match, stop looking.
           found_good_match = True
@@ -421,40 +424,40 @@ def SearchArtists(artist, limit=10, legacy=False):
   return artists
 
 
-def SearchAlbums(album, limit=10, legacy=False):
+def SearchAlbums(album, limit=10, various=False, legacy=False):
   albums = []
   url = ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit)
   # PROXY
-  if ShouldProxy(url):
-    try:
-      (xml_albums, more) = lastfm.SearchAlbums(album)
-      for album in xml_albums:
-        (name, artist, thumb, url) = album
-        albums.append({'name':name, 'artist':artist})
+  if various:
+    if ShouldProxy(url):
+      try:
+        (xml_albums, more) = lastfm.SearchAlbums(album)
+        for album in xml_albums:
+          (name, artist, thumb, url) = album
+          albums.append({'name':name, 'artist':artist})
+      except:
+        Log('Error retreiving album search results (legacy request).')
       return albums
-    except:
-      Log('Error retreiving album search results (legacy request).')
       # raise
-  else:
   # END PROXY
-    try:
-      response = GetJSON(url)
-      if response.has_key('error'):
-        Log('Error retrieving album search results: ' + response['message'])
-        return albums
-      else:
-        album_results = response['results']
-      if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
-        Log('No results for album search.')
-        return albums
-      # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
-      if not isinstance(album_results['albummatches']['album'], list):
-        album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
-      albums = album_results['albummatches']['album']
-    except:
-      Log('Error retrieving album search results.')
-      # raise
-    return albums
+  try:
+    response = GetJSON(url)
+    if response.has_key('error'):
+      Log('Error retrieving album search results: ' + response['message'])
+      return albums
+    else:
+      album_results = response['results']
+    if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
+      Log('No results for album search.')
+      return albums
+    # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
+    if not isinstance(album_results['albummatches']['album'], list):
+      album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
+    albums = album_results['albummatches']['album']
+  except:
+    Log('Error retrieving album search results.')
+    # raise
+  return albums
 
 
 def GetAlbumsByArtist(artist, page=1, limit=0, pg_size=50, albums=[], legacy=True):
