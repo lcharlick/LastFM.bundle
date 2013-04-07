@@ -41,7 +41,6 @@ ARTIST_LENGTH_PENALTY_COEFFICIENT = 2 # How much to penzlize for each character 
 ALBUM_INITIAL_SCORE = 92 # Starting point for albums before bonus/deductions.
 ALBUM_TRACK_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good album/track match.
 ALBUM_TRACK_MAX_BONUS = 20 # Maximum number of bonus points to give to albums with good track name matches.
-ALBUM_TRACK_NUM_DISTANCE_THRESHOLD = 2 # How close does the ordering need to match to get additional track order bonus.
 ALBUM_NUM_TRACKS_BONUS = 5 # How much to boost the bonus if the total number of tracks match.
 
 RE_STRIP_PARENS = Regex('\([^)]*\)')
@@ -71,12 +70,16 @@ class LastFmAgent(Agent.Artist):
       Log('Running custom search...')
     artists = []
     artist_results = []
-    artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
+
+    # Last.fm seems to consistently use '&' instead of 'and' so replace before searching.
+    artist_search_term = media.artist.replace('and','&')
+
+    artists = SearchArtists(artist_search_term, ARTIST_MATCH_LIMIT)
     
     # Score the first N results.
     self.score_artists(artists, media, lang, artist_results)
 
-    # Last.FM search results are heavily influenced by popularity.  As a result, many less popular artist 
+    # Last.fm search results are heavily influenced by popularity.  As a result, many less popular artist 
     # results are buried far down the list, and may not appear on the first page.  In order to minimize API
     # requests during automated matching, we only grab the first page of results.  If we're running a manual
     # or custom match, we can afford to make a few more requests.
@@ -246,7 +249,7 @@ class LastFmAlbumAgent(Agent.Album):
           Log('No good matches found in ' + str(len(albums)) + ' albums by artist.')
 
     # Either we're looking at Various Artists, or albums by artist search did not contain a good match.
-    # Last.FM mysteriously omits certain (often popular) albums from albums-by-artist results, so it's
+    # Last.fm mysteriously omits certain (often popular) albums from albums-by-artist results, so it's
     # important to fall back even in the case of single-artist albums.
     if not found_good_match or albums:
       albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
@@ -290,7 +293,7 @@ class LastFmAlbumAgent(Agent.Album):
       try:
         name = album['name']
         
-        # Sanitize artist.  Last.FM sometimes returns a string, sometimes a list.
+        # Sanitize artist.  Last.fm sometimes returns a string, sometimes a list.
         if album.has_key('artist'):
           if not isinstance(album['artist'], basestring):
             artist = album['artist']['name']
@@ -350,10 +353,6 @@ class LastFmAlbumAgent(Agent.Album):
 
           # If the names are close enough, boost the score.
           if Util.LevenshteinDistance(track['name'].lower(), media_track) <= NAME_DISTANCE_THRESHOLD:
-            bonus += ALBUM_TRACK_BONUS_INCREMENT
-
-          # If the tracks also appear close to the same order, boost a little more.
-          if abs(i-j) < ALBUM_TRACK_NUM_DISTANCE_THRESHOLD:
             bonus += ALBUM_TRACK_BONUS_INCREMENT
 
       # If the albums have the same number of tracks, boost more.
@@ -422,7 +421,7 @@ def SearchArtists(artist, limit=10, legacy=False):
         Log('Error retrieving artist search results: ' + response['message'])
       else:
         artist_results = response['results']
-        artists = artists + Dictify(artist_results['artistmatches']['artist'],'artist')['artist']
+        artists = artists + Listify(artist_results['artistmatches']['artist'])
     except:
       Log('Error retrieving artist search results.')
   return artists
@@ -438,7 +437,7 @@ def SearchAlbums(album, limit=10, legacy=False):
       return albums
     else:
       album_results = response['results']
-      albums = Dictify(album_results['albummatches']['album'],'album')['album']
+      albums = Listify(album_results['albummatches']['album'])
   except:
     Log('Error retrieving album search results.')
   return albums
@@ -460,7 +459,7 @@ def GetAlbumsByArtist(artist, page=1, limit=None, pg_size=50, albums=[], legacy=
     else:
       album_results = response['topalbums']
 
-    # Handle two different formats that Last.FM may use to return total matches.
+    # Handle two different formats that Last.fm may use to return total matches.
     if album_results.has_key('@attr'):
       total = int(album_results['@attr']['total'])
     elif album_results.has_key('total'):
@@ -540,10 +539,7 @@ def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
   return None
 
 
-# The following utility functions are used to sanitize Last.FM API responses, which can't be relied upon to
-# return consistent types.  Requests often seem to return different datastructures depending on whether they
-# contain zero, one, or multiple results.  Since we can't anticipate this, we need to clean up after the fact.
-
+# Utility functions for sanitizing Last.fm API responses.
 def Listify(obj):
   if isinstance(obj, list):
     return obj
