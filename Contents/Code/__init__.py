@@ -29,8 +29,6 @@ ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search resu
 ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
 ALBUM_TRACK_BONUS_MATCH_LIMIT = 5 # Max number of albums to try for track bonus.  Each one incurs at most one API request per album.
 QUERY_SLEEP_TIME = 0.5 # How long to sleep before firing off each API request.
-REQUEST_RETRY_LIMIT = 3 # Number of times to retry failing API requests.
-REQUEST_RETRY_SLEEP_TIME = 5 # Number of seconds to sleep between failing API requests.
 
 # Advanced tunables.
 NAME_DISTANCE_THRESHOLD = 2 # How close do album/track names need to be to match for bonuses?
@@ -72,7 +70,7 @@ class LastFmAgent(Agent.Artist):
     artist_results = []
 
     # Last.fm seems to consistently use '&' instead of 'and' so replace before searching.
-    artist_search_term = media.artist.replace('and','&')
+    artist_search_term = media.artist.replace(' and ',' & ')
 
     artists = SearchArtists(artist_search_term, ARTIST_MATCH_LIMIT)
     
@@ -524,19 +522,13 @@ def GetTracks(artist_id, album_id, lang='en'):
 def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
   # Try n times waiting 5 seconds in between if something goes wrong.
   d = None
-
-  for t in reversed(range(REQUEST_RETRY_LIMIT)):
-    try:
-      d = JSON.ObjectFromURL(url, sleep=sleep_time, cacheTime=cache_time, headers={'Accept-Encoding':'gzip'})
-    except:
-      Log('Error fetching JSON, will try %s more time(s) before giving up.', str(t))
-      time.sleep(REQUEST_RETRY_SLEEP_TIME)
-
+  try:
+    d = JSON.ObjectFromURL(url, sleep=sleep_time, cacheTime=cache_time, headers={'Accept-Encoding':'gzip'})    
     if isinstance(d, dict):
       return d
-
-  Log('Error fetching JSON.')
-  return None
+  except:
+    Log('Error fetching JSON.')
+    return None
 
 
 # Utility functions for sanitizing Last.fm API responses.
