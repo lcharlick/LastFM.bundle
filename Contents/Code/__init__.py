@@ -37,8 +37,10 @@ ARTIST_ALBUM_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good a
 ARTIST_ALBUM_MAX_BONUS = 15 # Maximum number of bonus points to give artists with good album matches.
 ARTIST_LENGTH_PENALTY_COEFFICIENT = 2 # How much to penzlize for each character of name length difference.
 ALBUM_INITIAL_SCORE = 92 # Starting point for albums before bonus/deductions.
+ALBUM_NAME_DIST_COEFFICIENT = 3 # Multiply album Lev. distance to give it a bit more weight.
 ALBUM_TRACK_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good album/track match.
 ALBUM_TRACK_MAX_BONUS = 20 # Maximum number of bonus points to give to albums with good track name matches.
+ALBUM_TRACK_BONUS_MAX_ARTIST_DSIT = 2 # How similar do the parent artist and album search result artist need to be to ask for info?
 ALBUM_NUM_TRACKS_BONUS = 5 # How much to boost the bonus if the total number of tracks match.
 
 RE_STRIP_PARENS = Regex('\([^)]*\)')
@@ -301,14 +303,13 @@ class LastFmAlbumAgent(Agent.Album):
           artist = ''
         
         id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
-        dist = Util.LevenshteinDistance(name.lower(),media.title.lower())
+        dist = Util.LevenshteinDistance(name.lower(),media.title.lower()) * ALBUM_NAME_DIST_COEFFICIENT
         
-        # Searches for Various Artist albums often return single-artist albums.  Penalize these heavily, skipping them.
-        if media.parent_metadata.id == 'Various%20Artists' and artist != 'Various Artists':
+        # Freeform album searches will come back with wacky artists.  If they're not close, penalize heavily, skipping them.
+        artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
+        if artist_dist > ALBUM_TRACK_BONUS_MAX_ARTIST_DSIT:
           artist_dist = 1000
-          Log('Penalizing bad result for Various Artists search: ' + artist)
-        else:
-          artist_dist = Util.LevenshteinDistance(artist.lower(),String.Unquote(media.parent_metadata.id).lower())
+          Log('Suppressing album result because artist looks wrong: ' + artist)
         
         # Apply album and artist penalties and append to temp results list.
         score = ALBUM_INITIAL_SCORE - dist - artist_dist
@@ -327,7 +328,7 @@ class LastFmAlbumAgent(Agent.Album):
           res[i]['score'] = res[i]['score'] + bonus
         
         # Append albums that meet the minimum score, skip the rest.
-        if res[i]['score'] >= ALBUM_MATCH_MIN_SCORE:
+        if res[i]['score'] >= ALBUM_MATCH_MIN_SCORE or manual:
           Log('Album result: ' + result['name'] + ' album bonus: ' + str(bonus) + ' score: ' + str(result['score']))
           matches.append(res[i])
         else:
