@@ -258,13 +258,8 @@ class LastFmAlbumAgent(Agent.Album):
       if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
         found_good_match = True
         Log('Found a good match for album search.')
-        else:
       
       # If we still haven't found anything, try another match with parenthetical phrases stripped from
-        albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT, various=various), manual=manual) + albums
-        if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
-          # Found a good match, stop looking.
-          found_good_match = True
       # album title.  This helps where things like '(Limited Edition)' and '(disc 1)' may confuse search.
       if not albums or not found_good_match:
         stripped_title = RE_STRIP_PARENS.sub('',media.title).lower()
@@ -431,22 +426,9 @@ def SearchArtists(artist, limit=10, legacy=False):
   return artists
 
 
-def SearchAlbums(album, limit=10, various=False, legacy=False):
+def SearchAlbums(album, limit=10, legacy=False):
   albums = []
   url = ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit)
-  # PROXY
-  if various:
-    if ShouldProxy(url):
-      try:
-        (xml_albums, more) = lastfm.SearchAlbums(album)
-        for album in xml_albums:
-          (name, artist, thumb, url) = album
-          albums.append({'name':name, 'artist':artist})
-      except:
-        Log('Error retreiving album search results (legacy request).')
-      return albums
-      # raise
-  # END PROXY
   try:
     response = GetJSON(url)
     if response.has_key('error'):
@@ -454,16 +436,9 @@ def SearchAlbums(album, limit=10, various=False, legacy=False):
       return albums
     else:
       album_results = response['results']
-    if album_results.has_key('albummatches') and not isinstance(album_results['albummatches'],dict) and not isinstance(album_results['albummatches'],list):
-      Log('No results for album search.')
-      return albums
-    # Note: If a single result is returned, it will not be in list form, it will be a single 'album' dict, so we fix that to be consistent.
       albums = Listify(album_results['albummatches']['album'])
-      album_results['albummatches'] = {'album':[album_results['albummatches']['album']]}
-    albums = album_results['albummatches']['album']
   except:
     Log('Error retrieving album search results.')
-    # raise
   return albums
 
 
