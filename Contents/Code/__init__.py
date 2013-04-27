@@ -71,10 +71,7 @@ class LastFmAgent(Agent.Artist):
     artists = []
     artist_results = []
 
-    # Last.fm seems to consistently use '&' instead of 'and' so replace before searching.
-    artist_search_term = media.artist.replace(' and ',' & ')
-
-    artists = SearchArtists(artist_search_term, ARTIST_MATCH_LIMIT)
+    artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
     
     # Score the first N results.
     self.score_artists(artists, media, lang, artist_results)
