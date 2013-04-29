@@ -49,8 +49,8 @@ def Start():
   HTTP.CacheTime = CACHE_1WEEK
 
 @expose
-def GetMbIdForArtist(metadata_id):
-  dict = GetArtist(metadata_id)
+def GetMbIdForArtist(artist):
+  dict = GetArtist(String.Quote(artist))
   if 'mbid' in dict:
     return dict['mbid']
   return None
