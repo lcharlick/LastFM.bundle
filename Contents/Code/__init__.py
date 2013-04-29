@@ -176,7 +176,7 @@ class LastFmAgent(Agent.Artist):
     metadata.title = artist['name']
 
     # Bio.
-    metadata.summary = String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip()
+    metadata.summary = String.DecodeHTMLEntities(String.StripTags(artist['bio']['content'][:artist['bio']['content'].find('\n\n')]).strip())
 
     # Artwork.
     if artist['name'] == 'Various Artists':
