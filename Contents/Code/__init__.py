@@ -49,8 +49,12 @@ def Start():
   HTTP.CacheTime = CACHE_1WEEK
 
 @expose
-def GetMbIdForArtist(artist):
-  dict = GetArtist(String.Quote(artist))
+def GetMusicBrainzId(artist, album=None):
+  if album:
+    dict = GetAlbum(String.Quote(artist), String.Quote(album))
+  else:
+    dict = GetArtist(String.Quote(artist))
+
   if 'mbid' in dict:
     return dict['mbid']
   return None
