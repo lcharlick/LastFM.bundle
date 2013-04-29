@@ -48,6 +48,13 @@ RE_STRIP_PARENS = Regex('\([^)]*\)')
 def Start():
   HTTP.CacheTime = CACHE_1WEEK
 
+@expose
+def GetMbIdForArtist(metadata_id):
+  dict = GetArtist(metadata_id)
+  if 'mbid' in dict:
+    return dict['mbid']
+  return None
+
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
   languages = [Locale.Language.English, Locale.Language.Swedish, Locale.Language.French,
