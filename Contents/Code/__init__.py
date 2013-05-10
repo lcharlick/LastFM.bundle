@@ -452,6 +452,7 @@ def SearchAlbums(album, limit=10, legacy=False):
 
 def GetAlbumsByArtist(artist, page=1, limit=None, pg_size=50, albums=[], legacy=True):
   url = ARTIST_ALBUM_SEARCH_URL % (String.Quote(String.Unquote(artist.lower())), page, pg_size)
+  total = 0
   try:
     
     # We use a larger page size when fetching all to limit the number of API requests. We can't use
