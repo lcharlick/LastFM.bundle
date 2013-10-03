@@ -28,7 +28,7 @@ ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album sea
 ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
 ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
 ALBUM_TRACK_BONUS_MATCH_LIMIT = 5 # Max number of albums to try for track bonus.  Each one incurs at most one API request per album.
-QUERY_SLEEP_TIME = 0.5 # How long to sleep before firing off each API request.
+QUERY_SLEEP_TIME = 0.1 # How long to sleep before firing off each API request.
 
 # Advanced tunables.
 NAME_DISTANCE_THRESHOLD = 2 # How close do album/track names need to be to match for bonuses?
@@ -530,7 +530,6 @@ def GetTracks(artist_id, album_id, lang='en'):
 
 
 def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
-  # Try n times waiting 5 seconds in between if something goes wrong.
   d = None
   try:
     d = JSON.ObjectFromURL(url, sleep=sleep_time, cacheTime=cache_time, headers={'Accept-Encoding':'gzip'})    
