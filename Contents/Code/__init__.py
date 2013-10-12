@@ -214,23 +214,29 @@ class LastFmAlbumAgent(Agent.Album):
                Locale.Language.Turkish, Locale.Language.Russian, Locale.Language.Chinese]
   
   def search(self, results, media, lang, manual):
-    
+
     # Handle a couple of edge cases where album search will give bad results.
     if media.parent_metadata.id is None:
       return
     if media.parent_metadata.id == '[Unknown Album]':
       return #eventually, we might be able to look at tracks to match the album
-    
+
     # Search for album.
-    Log('Album search: ' + media.title)
     if manual:
-      Log('Running custom search...')    
+      # If this is a custom search, use the user-entered name instead of the scanner hint.
+      try:
+        Log('Custom album search for: ' + media.name)
+        media.title = media.name
+      except:
+        pass
+    else:
+      Log('Album search: ' + media.title)
     albums = []
     found_good_match = False
 
     # First try matching in the list of albums by artist for single-artist albums.
     if media.parent_metadata.id != 'Various%20Artists':
-      
+
       # Start with the first N albums (ideally a single API request).
       if not manual:
         albums = self.score_albums(media, lang, GetAlbumsByArtist(media.parent_metadata.id, albums=[], limit=ARTIST_ALBUMS_LIMIT))
