@@ -427,7 +427,11 @@ def SearchArtists(artist, limit=10, legacy=False):
   artists = []
   lim = min(limit,ARTIST_SEARCH_PAGE_SIZE)
   for i in range((limit-1)/ARTIST_SEARCH_PAGE_SIZE+1):
-    url = ARTIST_SEARCH_URL % (String.Quote(artist.lower()), i+1, lim)
+    try:
+      a = artist.lower().encode('utf-8')
+    except:
+      a = artist.lower()
+    url = ARTIST_SEARCH_URL % (String.Quote(a), i+1, lim)
     try: 
       response = GetJSON(url)
       if response.has_key('error'):
@@ -441,8 +445,13 @@ def SearchArtists(artist, limit=10, legacy=False):
 
 
 def SearchAlbums(album, limit=10, legacy=False):
+
   albums = []
-  url = ALBUM_SEARCH_URL % (String.Quote(album.lower()), limit)
+  try:
+    a = album.lower().encode('utf-8')
+  except:
+    a = album.lower()
+  url = ALBUM_SEARCH_URL % (String.Quote(a), limit)
   try:
     response = GetJSON(url)
     if response.has_key('error'):
