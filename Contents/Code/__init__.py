@@ -197,9 +197,9 @@ class LastFmAgent(Agent.Artist):
         Log('Couldn\'t add artwork for artist.')
 
     # Genres.
+    metadata.genres.clear()
     if Prefs['genres']:
       try:
-        metadata.genres.clear()
         for genre in Listify(artist['tags']['tag']):
           metadata.genres.add(genre['name'].capitalize())
       except:
