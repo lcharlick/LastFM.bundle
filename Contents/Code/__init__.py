@@ -414,9 +414,9 @@ class LastFmAlbumAgent(Agent.Album):
       Log('Couldn\'t add release date to album.')
       
     # Genres.
+    metadata.genres.clear()
     if Prefs['genres']:
       try:
-        metadata.genres.clear()
         for genre in Listify(album['toptags']['tag']):
           metadata.genres.add(genre['name'].capitalize())
       except:
