@@ -45,8 +45,10 @@ ALBUM_NUM_TRACKS_BONUS = 5 # How much to boost the bonus if the total number of 
 
 RE_STRIP_PARENS = Regex('\([^)]*\)')
 
+
 def Start():
   HTTP.CacheTime = CACHE_1WEEK
+
 
 @expose
 def GetMusicBrainzId(artist, album=None):
@@ -58,6 +60,87 @@ def GetMusicBrainzId(artist, album=None):
   if 'mbid' in dict:
     return dict['mbid']
   return None
+
+
+@expose
+def ArtistSearch(artist, albums=[], lang='en'):
+  if artist == '[Unknown Artist]' or artist == 'Various Artists':
+    return
+  artist_results = []
+  artists = SearchArtists(artist, ARTIST_MATCH_LIMIT)
+  score_artists(artists, artist, albums, lang, artist_results)
+  if len(artist_results) > 0:
+    return GetArtist(artist_results[0].id)
+
+
+# Score lists of artist results.  Permutes artist_results list.
+def score_artists(artists, media_artist, media_albums, lang, artist_results):
+  
+  for i, artist in enumerate(artists):
+
+    # If there's only a single result, it will not include the 'listeners' key. Single results tend to be a good matches.
+    # Distrust artists with fewer than N listeners.
+    #
+    if artist.has_key('listeners') and artist['listeners'] < ARTIST_MIN_LISTENER_THRESHOLD:
+      Log('Skipping %s with only %d listeners.' % (artist['name'], artist['listeners']))
+      continue
+
+    # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
+    id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
+    
+    # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance.
+    dist = Util.LevenshteinDistance(artist['name'].lower(), media_artist.lower())
+    
+    # Penalize difference in length (further differentiate common mismatches, e.g. "Cave" matching "Nick Cave")
+    dist = dist + ARTIST_LENGTH_PENALTY_COEFFICIENT * abs(len(artist['name'].decode('utf-8').encode('utf-8')) - len(media_artist.decode('utf-8').encode('utf-8')))
+    
+    # Fetching albums in order to apply bonus is expensive, so only do it for the top N artist matches.
+    if i < ARTIST_ALBUMS_MATCH_LIMIT:
+      bonus = get_album_bonus(media_albums, artist_id=id)
+    else:
+      bonus = 0
+    
+    # Adjust the score.
+    score = ARTIST_INITIAL_SCORE + bonus - dist
+    name = artist['name']
+    Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' score: ' + str(score))
+    
+    # Skip matches that don't meet the minimum score.  There many be many, especially if this was a manual search.
+    if score >= ARTIST_MATCH_MIN_SCORE:
+      artist_results.append(MetadataSearchResult(id=id, name=name, lang=lang, score=score))
+    else:
+      Log('Skipping artist, didn\'t meet minimum score of ' + str(ARTIST_MATCH_MIN_SCORE))
+
+# Get albums by artist and boost artist match score accordingly.  Returns bonus (int) of 0 - ARTIST_ALBUM_MAX_BONUS.
+def get_album_bonus(media_albums, artist_id):
+  
+  Log('Fetching artist\'s albums and applying album bonus.')
+  bonus = 0
+  albums = GetAlbumsByArtist(artist_id, albums=[], limit=ARTIST_ALBUMS_LIMIT)
+  
+  try:
+    for a in media_albums:    
+      media_album = a.title.lower()  
+      for album in albums:
+        
+        # If the album title is close enough to the media title, boost the score.
+        if Util.LevenshteinDistance(media_album,album['name'].lower()) <= NAME_DISTANCE_THRESHOLD:
+          bonus += ARTIST_ALBUM_BONUS_INCREMENT
+        
+        # This is a cheap comparison, so let's try again with the contents of parentheses removed, e.g. "(limited edition)"
+        elif Util.LevenshteinDistance(media_album,RE_STRIP_PARENS.sub('',album['name'].lower())) <= NAME_DISTANCE_THRESHOLD:
+          bonus += ARTIST_ALBUM_BONUS_INCREMENT
+        
+        # Stop trying once we hit the max bonus.
+        if bonus >= ARTIST_ALBUM_MAX_BONUS:
+          break
+  
+  except:
+    Log('Did\'t find usable albums in search results, not applying artist album bonus.')
+  if bonus > 0:
+    Log('Applying album bonus of: ' + str(bonus))
+  return bonus
+
 
 class LastFmAgent(Agent.Artist):
   name = 'Last.fm'
@@ -83,89 +166,23 @@ class LastFmAgent(Agent.Artist):
     artist_results = []
 
     artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
+    media_albums = [a for a in media.children]
     
     # Score the first N results.
-    self.score_artists(artists, media, lang, artist_results)
+    score_artists(artists, media.artist, media_albums, lang, artist_results)
 
     # Last.fm search results are heavily influenced by popularity.  As a result, many less popular artist 
     # results are buried far down the list, and may not appear on the first page.  In order to minimize API
     # requests during automated matching, we only grab the first page of results.  If we're running a manual
     # or custom match, we can afford to make a few more requests.
+    #
     if manual and not artist_results:
       Log('Fetching additional artists for custom search...')
       artists = SearchArtists(media.artist, ARTIST_MANUAL_MATCH_LIMIT)
-      self.score_artists(artists, media, lang, artist_results)
+      score_artists(artists, media.artist, media_albums, lang, artist_results)
 
     for artist in artist_results:
       results.Append(artist)
-
-  # Score lists of artist results.  Permutes artist_results list.
-  def score_artists(self, artists, media, lang, artist_results):
-    
-    for i, artist in enumerate(artists):
-
-      # If there's only a single result, it will not include the 'listeners' key. Single results tend to be a good matches.
-      # Distrust artists with fewer than N listeners.
-      if artist.has_key('listeners') and artist['listeners'] < ARTIST_MIN_LISTENER_THRESHOLD:
-        Log('Skipping %s with only %d listeners.' % (artist['name'], artist['listeners']))
-        continue
-
-      # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
-      id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
-      
-      # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance.
-      dist = Util.LevenshteinDistance(artist['name'].lower(), media.artist.lower())
-      
-      # Penalize difference in length (further differentiate common mismatches, e.g. "Cave" matching "Nick Cave")
-      dist = dist + ARTIST_LENGTH_PENALTY_COEFFICIENT * abs(len(artist['name'].decode('utf-8').encode('utf-8')) - len(media.artist.decode('utf-8').encode('utf-8')))
-      
-      # Fetching albums in order to apply bonus is expensive, so only do it for the top N artist matches.
-      if i < ARTIST_ALBUMS_MATCH_LIMIT:
-        bonus = self.get_album_bonus(media, artist_id=id)
-      else:
-        bonus = 0
-      
-      # Adjust the score.
-      score = ARTIST_INITIAL_SCORE + bonus - dist
-      name = artist['name']
-      Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' score: ' + str(score))
-      
-      # Skip matches that don't meet the minimum score.  There many be many, especially if this was a manual search.
-      if score >= ARTIST_MATCH_MIN_SCORE:
-        artist_results.append(MetadataSearchResult(id=id, name=name, lang=lang, score=score))
-      else:
-        Log('Skipping artist, didn\'t meet minimum score of ' + str(ARTIST_MATCH_MIN_SCORE))
-
-  # Get albums by artist and boost artist match score accordingly.  Returns bonus (int) of 0 - ARTIST_ALBUM_MAX_BONUS.
-  def get_album_bonus(self, media, artist_id):
-    
-    Log('Fetching artist\'s albums and applying album bonus.')
-    bonus = 0
-    albums = GetAlbumsByArtist(artist_id, albums=[], limit=ARTIST_ALBUMS_LIMIT)
-    
-    try:
-      for a in media.children:    
-        media_album = a.title.lower()  
-        for album in albums:
-          
-          # If the album title is close enough to the media title, boost the score.
-          if Util.LevenshteinDistance(media_album,album['name'].lower()) <= NAME_DISTANCE_THRESHOLD:
-            bonus += ARTIST_ALBUM_BONUS_INCREMENT
-          
-          # This is a cheap comparison, so let's try again with the contents of parentheses removed, e.g. "(limited edition)"
-          elif Util.LevenshteinDistance(media_album,RE_STRIP_PARENS.sub('',album['name'].lower())) <= NAME_DISTANCE_THRESHOLD:
-            bonus += ARTIST_ALBUM_BONUS_INCREMENT
-          
-          # Stop trying once we hit the max bonus.
-          if bonus >= ARTIST_ALBUM_MAX_BONUS:
-            break
-    
-    except:
-      Log('Did\'t find usable albums in search results, not applying artist album bonus.')
-    if bonus > 0:
-      Log('Applying album bonus of: ' + str(bonus))
-    return bonus
-  
 
   def update(self, metadata, media, lang):
     artist = GetArtist(metadata.id, lang)
