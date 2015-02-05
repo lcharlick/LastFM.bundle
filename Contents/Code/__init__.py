@@ -64,7 +64,6 @@ def GetMusicBrainzId(artist, album=None):
 
 @expose
 def ArtistSearch(artist, albums=[], lang='en'):
-# def ArtistSearch(artist, albums=[]):
   if artist == '[Unknown Artist]' or artist == 'Various Artists':
     return
   artist_results = []
