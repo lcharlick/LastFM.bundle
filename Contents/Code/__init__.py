@@ -68,10 +68,14 @@ def ArtistSearch(artist, albums=[], lang='en'):
     return
   artist_results = []
   artists = SearchArtists(artist, ARTIST_MATCH_LIMIT)
+  
+  # Extra shot if there's an & in there.
+  if '&' in artist:
+    artists += SearchArtists(artist.replace('&', 'and'), ARTIST_MATCH_LIMIT)
+  
   score_artists(artists, artist, albums, lang, artist_results)
   if len(artist_results) > 0:
     return GetArtist(artist_results[0].id)
-
 
 # Score lists of artist results.  Permutes artist_results list.
 def score_artists(artists, media_artist, media_albums, lang, artist_results):
