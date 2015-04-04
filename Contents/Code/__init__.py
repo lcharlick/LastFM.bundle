@@ -64,7 +64,7 @@ def GetMusicBrainzId(artist, album=None):
 
 @expose
 def ArtistSearch(artist, albums=[], lang='en'):
-  if artist == '[Unknown Artist]' or artist == 'Various Artists':
+  if artist == '[Unknown Artist]' or artist == 'Various Artists' or artist == 'OST':
     return
   artist_results = []
   artists = SearchArtists(artist, ARTIST_MATCH_LIMIT)
