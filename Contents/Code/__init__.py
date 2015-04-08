@@ -35,7 +35,7 @@ NAME_DISTANCE_THRESHOLD = 2 # How close do album/track names need to be to match
 ARTIST_INITIAL_SCORE = 90 # Starting point for artists before bonus/deductions.
 ARTIST_ALBUM_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good artist/album match.
 ARTIST_ALBUM_MAX_BONUS = 15 # Maximum number of bonus points to give artists with good album matches.
-ARTIST_LENGTH_PENALTY_COEFFICIENT = 2 # How much to penzlize for each character of name length difference.
+ARTIST_MAX_DIST_PENALTY = 40 # Maxiumum amount to penalize for Lev ratio difference in artist names.
 ALBUM_INITIAL_SCORE = 92 # Starting point for albums before bonus/deductions.
 ALBUM_NAME_DIST_COEFFICIENT = 3 # Multiply album Lev. distance to give it a bit more weight.
 ALBUM_TRACK_BONUS_INCREMENT = 1 # How much to boost the bonus for a each good album/track match.
@@ -92,11 +92,8 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
     # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
     id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
     
-    # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein distance.
-    dist = Util.LevenshteinDistance(artist['name'].lower(), media_artist.lower())
-    
-    # Penalize difference in length (further differentiate common mismatches, e.g. "Cave" matching "Nick Cave")
-    dist = dist + ARTIST_LENGTH_PENALTY_COEFFICIENT * abs(len(artist['name'].decode('utf-8').encode('utf-8')) - len(media_artist.decode('utf-8').encode('utf-8')))
+    # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein ratio.
+    dist = int(ARTIST_MAX_DIST_PENALTY - ARTIST_MAX_DIST_PENALTY * LevenshteinRatio(artist['name'].lower(), media_artist.lower()))
     
     # Fetching albums in order to apply bonus is expensive, so only do it for the top N artist matches.
     if i < ARTIST_ALBUMS_MATCH_LIMIT:
@@ -128,9 +125,9 @@ def get_album_bonus(media_albums, artist_id):
   
   try:
     for a in media_albums:    
-      media_album = a.title.lower()  
+      media_album = a.lower()  
       for album in albums:
-        
+
         # If the album title is close enough to the media title, boost the score.
         if Util.LevenshteinDistance(media_album,album['name'].lower()) <= NAME_DISTANCE_THRESHOLD:
           bonus += ARTIST_ALBUM_BONUS_INCREMENT
@@ -143,8 +140,8 @@ def get_album_bonus(media_albums, artist_id):
         if bonus >= ARTIST_ALBUM_MAX_BONUS:
           break
   
-  except:
-    Log('Did\'t find usable albums in search results, not applying artist album bonus.')
+  except Exception, e:
+    Log('Error applying album bonus: ' + str(e))
   if bonus > 0:
     Log('Applying album bonus of: ' + str(bonus))
   return bonus
@@ -174,7 +171,7 @@ class LastFmAgent(Agent.Artist):
     artist_results = []
 
     artists = SearchArtists(media.artist, ARTIST_MATCH_LIMIT)
-    media_albums = [a for a in media.children]
+    media_albums = [a.title for a in media.children]
     
     # Score the first N results.
     score_artists(artists, media.artist, media_albums, lang, artist_results)
@@ -579,6 +576,8 @@ def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
     Log('Error fetching JSON.')
     return None
 
+def LevenshteinRatio(first, second):
+  return 1 - (Util.LevenshteinDistance(first, second) / float(max(len(first), len(second))))
 
 # Utility functions for sanitizing Last.fm API responses.
 def Listify(obj):
