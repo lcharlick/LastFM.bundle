@@ -9,6 +9,7 @@ BASE_URL = 'http://lastfm-z.plexapp.com/2.0/'
 ARTIST_SEARCH_URL = BASE_URL + '?method=artist.search&artist=%s&page=%d&limit=%d&format=json&api_key=' + API_KEY
 ARTIST_ALBUM_SEARCH_URL = BASE_URL + '?method=artist.gettopalbums&artist=%s&page=%s&limit=%s&format=json&api_key=' + API_KEY
 ARTIST_INFO_URL = BASE_URL + '?method=artist.getInfo&artist=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
+ARTIST_TOP_TRACKS_URL = BASE_URL + "?method=artist.getTopTracks&artist=%s&lang=%s&format=json&api_key=" + API_KEY
 
 ALBUM_SEARCH_URL = BASE_URL + '?method=album.search&album=%s&limit=%s&format=json&api_key=' + API_KEY
 ALBUM_INFO_URL = BASE_URL + '?method=album.getInfo&artist=%s&album=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
@@ -76,6 +77,11 @@ def ArtistSearch(artist, albums=[], lang='en'):
   score_artists(artists, artist, albums, lang, artist_results)
   if len(artist_results) > 0 and artist_results[0].score >= 85:
     return GetArtist(artist_results[0].id)
+
+@expose
+def ArtistTopTracks(artist, lang='en'):
+  id = String.Quote(artist.decode('utf-8').encode('utf-8')).replace(' ','+')
+  return GetArtistTopTracks(id, lang)
 
 # Score lists of artist results.  Permutes artist_results list.
 def score_artists(artists, media_artist, media_albums, lang, artist_results):
@@ -563,6 +569,19 @@ def GetTracks(artist_id, album_id, lang='en'):
     return Listify(tracks_result['album']['tracks']['track'])
   except:
     Log('Error retrieving tracks.')
+    return []
+
+
+def GetArtistTopTracks(artist_id, lang='en'):
+  url = ARTIST_TOP_TRACKS_URL % (artist_id.lower(), lang)
+  try:
+    top_tracks_result = GetJSON(url)
+    if top_tracks_result.has_key('error'):
+      Log('Error receiving top tracks: ' + top_tracks_result['message'])
+      return []
+    return Listify(top_tracks_result['toptracks']['track'])
+  except:
+    Log('Exception getting top tracks.')
     return []
 
 
