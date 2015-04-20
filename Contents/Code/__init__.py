@@ -10,6 +10,7 @@ ARTIST_SEARCH_URL = BASE_URL + '?method=artist.search&artist=%s&page=%d&limit=%d
 ARTIST_ALBUM_SEARCH_URL = BASE_URL + '?method=artist.gettopalbums&artist=%s&page=%s&limit=%s&format=json&api_key=' + API_KEY
 ARTIST_INFO_URL = BASE_URL + '?method=artist.getInfo&artist=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
 ARTIST_TOP_TRACKS_URL = BASE_URL + "?method=artist.getTopTracks&artist=%s&lang=%s&format=json&api_key=" + API_KEY
+ARTIST_SIMILAR_ARTISTS_URL = BASE_URL + "?method=artist.getSimilar&artist=%s&lang=%s&format=json&limit=20&api_key=" + API_KEY
 
 ALBUM_SEARCH_URL = BASE_URL + '?method=album.search&album=%s&limit=%s&format=json&api_key=' + API_KEY
 ALBUM_INFO_URL = BASE_URL + '?method=album.getInfo&artist=%s&album=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
@@ -78,10 +79,18 @@ def ArtistSearch(artist, albums=[], lang='en'):
   if len(artist_results) > 0 and artist_results[0].score >= 85:
     return GetArtist(artist_results[0].id)
 
+
 @expose
 def ArtistTopTracks(artist, lang='en'):
   id = String.Quote(artist.decode('utf-8').encode('utf-8')).replace(' ','+')
   return GetArtistTopTracks(id, lang)
+
+
+@expose
+def ArtistGetSimilar(artist, lang='en'):
+  id = String.Quote(artist.decode('utf-8').encode('utf-8')).replace(' ','+')
+  return GetArtistSimilar(id, lang)
+
 
 # Score lists of artist results.  Permutes artist_results list.
 def score_artists(artists, media_artist, media_albums, lang, artist_results):
@@ -580,6 +589,19 @@ def GetArtistTopTracks(artist_id, lang='en'):
       Log('Error receiving top tracks: ' + top_tracks_result['message'])
       return []
     return Listify(top_tracks_result['toptracks']['track'])
+  except:
+    Log('Exception getting top tracks.')
+    return []
+
+
+def GetArtistSimilar(artist_id, lang='en'):
+  url = ARTIST_SIMILAR_ARTISTS_URL % (artist_id.lower(), lang)
+  try:
+    similar_artists_result = GetJSON(url)
+    if similar_artists_result.has_key('error'):
+      Log('Error receiving top tracks: ' + similar_artists_result['message'])
+      return []
+    return Listify(similar_artists_result['similarartists']['artist'])
   except:
     Log('Exception getting top tracks.')
     return []
