@@ -599,11 +599,14 @@ def GetArtistSimilar(artist_id, lang='en'):
   try:
     similar_artists_result = GetJSON(url)
     if similar_artists_result.has_key('error'):
-      Log('Error receiving top tracks: ' + similar_artists_result['message'])
+      Log('Error receiving similar artists: ' + similar_artists_result['message'])
       return []
-    return Listify(similar_artists_result['similarartists']['artist'])
+    if isinstance(similar_artists_result['similarartists']['artist'], dict):
+      return Listify(similar_artists_result['similarartists']['artist'])
+    else:  # Sometimes we just get a string here for no apparent reason.
+      return Listify({'name':similar_artists_result['similarartists']['artist']})
   except:
-    Log('Exception getting top tracks.')
+    Log('Exception getting similar artists.')
     return []
 
 
