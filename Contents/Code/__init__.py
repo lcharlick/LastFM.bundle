@@ -233,6 +233,13 @@ class LastFmAgent(Agent.Artist):
       except:
         Log('Couldn\'t add artwork for artist.')
 
+    # Find similar artists.
+    similar_artists = ArtistGetSimilar(artist['name'], lang)
+    metadata.similar.clear()
+    if similar_artists is not None:
+      for similar in similar_artists:
+        metadata.similar.add(similar['name'])
+
     # Genres.
     metadata.genres.clear()
     if Prefs['genres']:
@@ -459,6 +466,20 @@ class LastFmAlbumAgent(Agent.Album):
       except:
         Log('Couldn\'t add genre tags to album.')
 
+    # Top tracks.
+    most_popular_tracks = {}
+    try:
+      top_tracks = GetArtistTopTracks(metadata.id.split('/')[0], lang)
+      for track in top_tracks:
+        most_popular_tracks[track['name']] = int(track['playcount'])
+    except:
+      pass
+
+    for index in media.tracks:
+      for popular_track in most_popular_tracks.keys():
+        if LevenshteinRatio(popular_track, media.tracks[index].title) > 0.95:
+          t = metadata.tracks[int(index)]
+          t.rating_count = most_popular_tracks[popular_track]
 
 def SearchArtists(artist, limit=10, legacy=False):
   artists = []
