@@ -79,6 +79,26 @@ def ArtistSearch(artist, albums=[], lang='en'):
   if len(artist_results) > 0 and artist_results[0].score >= 85:
     return GetArtist(artist_results[0].id)
 
+@expose
+def AlbumSearch(artist, album, year, lang):
+  id = String.Quote(artist.decode('utf-8').encode('utf-8')).replace(' ','+')
+  
+  # Try by top albums.
+  albums = GetAlbumsByArtist(id, albums=[])
+  for a in albums:
+    if LevenshteinRatio(a['name'], album) > 0.95:
+      album_id = String.Quote(a['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
+      return GetAlbum(id, album_id, lang)
+
+  # Try looking up album directly.
+  albums = SearchAlbums(album, limit=50, legacy=False)
+  for a in albums:
+    artist_id = String.Quote(a['artist'].decode('utf-8').encode('utf-8')).replace(' ','+')
+    if LevenshteinRatio(a['name'], album) > 0.95 and artist_id == id:
+      album_id = String.Quote(a['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
+      return GetAlbum(artist_id, album_id, lang)
+
+  return None
 
 @expose
 def ArtistTopTracks(artist, lang='en'):
