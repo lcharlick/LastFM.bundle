@@ -110,6 +110,10 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
     # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein ratio.
     dist = int(ARTIST_MAX_DIST_PENALTY - ARTIST_MAX_DIST_PENALTY * LevenshteinRatio(artist['name'].lower(), media_artist.lower()))
     
+    # If the match is exact, bonus.
+    if artist['name'].lower() == media_artist.lower():
+      dist = dist - 1
+    
     # Fetching albums in order to apply bonus is expensive, so only do it for the top N artist matches.
     if i < ARTIST_ALBUMS_MATCH_LIMIT:
       bonus = get_album_bonus(media_albums, artist_id=id)
