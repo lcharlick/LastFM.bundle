@@ -11,6 +11,7 @@ ARTIST_ALBUM_SEARCH_URL = BASE_URL + '?method=artist.gettopalbums&artist=%s&page
 ARTIST_INFO_URL = BASE_URL + '?method=artist.getInfo&artist=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
 ARTIST_TOP_TRACKS_URL = BASE_URL + "?method=artist.getTopTracks&artist=%s&lang=%s&format=json&api_key=" + API_KEY
 ARTIST_SIMILAR_ARTISTS_URL = BASE_URL + "?method=artist.getSimilar&artist=%s&lang=%s&format=json&limit=20&api_key=" + API_KEY
+ARTIST_EVENTS_URL = BASE_URL + "?method=artist.getEvents&artist=%s&lang=%s&format=json&limit=30&api_key=" + API_KEY
 
 ALBUM_SEARCH_URL = BASE_URL + '?method=album.search&album=%s&limit=%s&format=json&api_key=' + API_KEY
 ALBUM_INFO_URL = BASE_URL + '?method=album.getInfo&artist=%s&album=%s&autocorrect=1&lang=%s&format=json&api_key=' + API_KEY
@@ -25,7 +26,7 @@ ARTIST_MANUAL_MATCH_LIMIT = 120 # Number of artists to fetch when trying harder 
 ARTIST_SEARCH_PAGE_SIZE = 30 # Number of artists in a search result page.  Asking for more has no effect.
 ARTIST_ALBUMS_MATCH_LIMIT = 5 # Max number of artist matches to try for album bonus.  Each one incurs an additional API request.
 ARTIST_ALBUMS_LIMIT = 50 # Number of albums by artist to grab for artist matching bonus and quick album match.
-ARTIST_MIN_LISTENER_THRESHOLD = 1000 # Minimum number of listeners for an artist to be considered credible.
+ARTIST_MIN_LISTENER_THRESHOLD = 250 # Minimum number of listeners for an artist to be considered credible.
 ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album searches with no artist info (e.g. Various Artists).
 ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
 ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
@@ -111,6 +112,11 @@ def ArtistGetSimilar(artist, lang='en'):
   id = String.Quote(artist.decode('utf-8').encode('utf-8')).replace(' ','+')
   return GetArtistSimilar(id, lang)
 
+
+@expose
+def ArtistGetEvents(artist, lang='en'):
+  id = String.Quote(artist.decode('utf-8').encode('utf-8')).replace(' ','+')
+  return GetArtistEvents(id, lang)
 
 # Score lists of artist results.  Permutes artist_results list.
 def score_artists(artists, media_artist, media_albums, lang, artist_results):
@@ -654,6 +660,17 @@ def GetArtistSimilar(artist_id, lang='en'):
     Log('Exception getting similar artists.')
     return []
 
+def GetArtistEvents(artist_id, lang='en'):
+  url = ARTIST_EVENTS_URL % (artist_id.lower(), lang)
+  try:
+    events_result = GetJSON(url)
+    if events_result.has_key('error'):
+      Log('Error receiving events: ' + events_result['message'])
+      return []
+    return Listify(events_result['events']['event'])
+  except:
+    Log('Exception getting events.')
+    return []
 
 def GetJSON(url, sleep_time=QUERY_SLEEP_TIME, cache_time=CACHE_1MONTH):
   d = None
