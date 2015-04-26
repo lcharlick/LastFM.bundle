@@ -666,8 +666,6 @@ def GetArtistSimilar(artist_id, lang='en'):
       return []
     if isinstance(similar_artists_result['similarartists']['artist'], list) or isinstance(similar_artists_result['similarartists']['artist'], dict):
       return Listify(similar_artists_result['similarartists']['artist'])
-    else:  # Sometimes we just get a string here for no apparent reason.
-      return Listify({'name':similar_artists_result['similarartists']['artist']})
   except:
     Log('Exception getting similar artists.')
     return []
