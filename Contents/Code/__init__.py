@@ -264,11 +264,23 @@ class LastFmAgent(Agent.Artist):
         Log('Couldn\'t add artwork for artist.')
 
     # Find similar artists.
-    similar_artists = ArtistGetSimilar(artist['name'], lang)
     metadata.similar.clear()
+    similar_artists = ArtistGetSimilar(artist['name'], lang)
     if similar_artists is not None:
       for similar in similar_artists:
         metadata.similar.add(similar['name'])
+    
+    # Events.
+    metadata.concerts.clear()
+    events = ArtistGetEvents(artist['name'], lang)
+    for event in events:
+      concert = metadata.concerts.new()
+      concert.title = event['title']
+      concert.venue = event['venue']['name']
+      concert.city = event['venue']['location']['city']
+      concert.country = event['venue']['location']['country']
+      concert.date = Datetime.ParseDate(event['startDate'], '%Y-%m-%d %H:%M:00')
+      concert.url = event['url']  
 
     # Genres.
     metadata.genres.clear()
