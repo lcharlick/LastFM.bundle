@@ -280,7 +280,7 @@ class LastFmAgent(Agent.Artist):
       concert.city = event['venue']['location']['city']
       concert.country = event['venue']['location']['country']
       concert.date = Datetime.ParseDate(event['startDate'], '%Y-%m-%d %H:%M:00')
-      concert.url = event['url']  
+      concert.url = artist['url'] + '/+events'
 
     # Genres.
     metadata.genres.clear()
