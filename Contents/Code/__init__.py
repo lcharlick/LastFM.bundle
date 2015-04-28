@@ -272,15 +272,16 @@ class LastFmAgent(Agent.Artist):
     
     # Events.
     metadata.concerts.clear()
-    events = ArtistGetEvents(artist['name'], lang)
-    for event in events:
-      concert = metadata.concerts.new()
-      concert.title = event['title']
-      concert.venue = event['venue']['name']
-      concert.city = event['venue']['location']['city']
-      concert.country = event['venue']['location']['country']
-      concert.date = Datetime.ParseDate(event['startDate'], '%Y-%m-%d %H:%M:00')
-      concert.url = artist['url'] + '/+events'
+    if Prefs['concerts']:
+      events = ArtistGetEvents(artist['name'], lang)
+      for event in events:
+        concert = metadata.concerts.new()
+        concert.title = event['title']
+        concert.venue = event['venue']['name']
+        concert.city = event['venue']['location']['city']
+        concert.country = event['venue']['location']['country']
+        concert.date = Datetime.ParseDate(event['startDate'], '%Y-%m-%d %H:%M:00')
+        concert.url = artist['url'] + '/+events'
 
     # Genres.
     metadata.genres.clear()
@@ -521,7 +522,10 @@ class LastFmAlbumAgent(Agent.Album):
       for popular_track in most_popular_tracks.keys():
         if LevenshteinRatio(popular_track, media.tracks[index].title) > 0.95:
           t = metadata.tracks[int(index)]
-          t.rating_count = most_popular_tracks[popular_track]
+          if Prefs['popular']:
+            t.rating_count = most_popular_tracks[popular_track]
+          else:
+            t.rating_count = 0
 
 def SearchArtists(artist, limit=10, legacy=False):
   artists = []
