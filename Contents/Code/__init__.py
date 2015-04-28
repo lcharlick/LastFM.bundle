@@ -274,14 +274,18 @@ class LastFmAgent(Agent.Artist):
     metadata.concerts.clear()
     if Prefs['concerts']:
       events = ArtistGetEvents(artist['name'], lang)
-      for event in events:
-        concert = metadata.concerts.new()
-        concert.title = event['title']
-        concert.venue = event['venue']['name']
-        concert.city = event['venue']['location']['city']
-        concert.country = event['venue']['location']['country']
-        concert.date = Datetime.ParseDate(event['startDate'], '%Y-%m-%d %H:%M:00')
-        concert.url = artist['url'] + '/+events'
+      if events:
+        for event in events:
+          try:
+            concert = metadata.concerts.new()
+            concert.title = event['title']
+            concert.venue = event['venue']['name']
+            concert.city = event['venue']['location']['city']
+            concert.country = event['venue']['location']['country']
+            concert.date = Datetime.ParseDate(event['startDate'], '%Y-%m-%d %H:%M:00')
+            concert.url = artist['url'] + '/+events'
+          except:
+            pass
 
     # Genres.
     metadata.genres.clear()
