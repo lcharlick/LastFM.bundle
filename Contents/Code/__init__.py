@@ -158,8 +158,7 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
       Log('Skipping artist, didn\'t meet minimum score of ' + str(ARTIST_MATCH_MIN_SCORE))
       
     # Sort the resulting artists.
-    artist_results.sort(key=lambda r: r.score)
-    artist_results.reverse()
+    artist_results.sort(key=lambda r: r.score, reverse=True)    
 
 # Get albums by artist and boost artist match score accordingly.  Returns bonus (int) of 0 - ARTIST_ALBUM_MAX_BONUS.
 def get_album_bonus(media_albums, artist_id):
