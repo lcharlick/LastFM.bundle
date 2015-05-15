@@ -126,7 +126,7 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
     # If there's only a single result, it will not include the 'listeners' key. Single results tend to be a good matches.
     # Distrust artists with fewer than N listeners.
     #
-    if artist.has_key('listeners') and int(artist['listeners']) < ARTIST_MIN_LISTENER_THRESHOLD:
+    if artist.has_key('listeners') and int(artist['listeners']) < ARTIST_MIN_LISTENER_THRESHOLD and len(artists) > 1:
       Log('Skipping %s with only %s listeners.' % (artist['name'], artist['listeners']))
       continue
 
