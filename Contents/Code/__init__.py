@@ -27,6 +27,7 @@ ARTIST_SEARCH_PAGE_SIZE = 30 # Number of artists in a search result page.  Askin
 ARTIST_ALBUMS_MATCH_LIMIT = 5 # Max number of artist matches to try for album bonus.  Each one incurs an additional API request.
 ARTIST_ALBUMS_LIMIT = 50 # Number of albums by artist to grab for artist matching bonus and quick album match.
 ARTIST_MIN_LISTENER_THRESHOLD = 250 # Minimum number of listeners for an artist to be considered credible.
+ARTIST_MATCH_GOOD_SCORE = 90 # Include artists with this score or higher regardless of listener count.
 ALBUM_MATCH_LIMIT = 8 # Max number of results returned from standalone album searches with no artist info (e.g. Various Artists).
 ALBUM_MATCH_MIN_SCORE = 75 # Minimum score required to add to custom search results.
 ALBUM_MATCH_GOOD_SCORE = 96 # Minimum score required to rely on only Albums by Artist and not search.
@@ -123,13 +124,6 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
   
   for i, artist in enumerate(artists):
 
-    # If there's only a single result, it will not include the 'listeners' key. Single results tend to be a good matches.
-    # Distrust artists with fewer than N listeners.
-    #
-    if artist.has_key('listeners') and int(artist['listeners']) < ARTIST_MIN_LISTENER_THRESHOLD and len(artists) > 1:
-      Log('Skipping %s with only %s listeners.' % (artist['name'], artist['listeners']))
-      continue
-
     # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
     id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
     
@@ -148,8 +142,17 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
     
     # Adjust the score.
     score = ARTIST_INITIAL_SCORE + bonus - dist
+
+    # Finally, apply some heuristics based on listener count. If there's only a single result, it will not include the 'listeners' key.
+    # Single results tend to be a good matches. Distrust artists with fewer than N listeners if it was not a really good match.
+    #
+    if len(artists) > 1 and artist.has_key('listeners') and int(artist['listeners']) < ARTIST_MIN_LISTENER_THRESHOLD and score < ARTIST_MATCH_GOOD_SCORE:
+      Log('Skipping %s with only %s listeners and score of %s.' % (artist['name'], artist['listeners'], score))
+      continue
+    
     name = artist['name']
-    Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' score: ' + str(score))
+    listeners = artist['listeners'] if artist.has_key('listeners') else '(no listeners data)'
+    Log('Artist result: ' + name + ' dist: ' + str(dist) + ' album bonus: ' + str(bonus) + ' listeners: ' + str(listeners) + ' score: ' + str(score))
     
     # Skip matches that don't meet the minimum score.  There many be many, especially if this was a manual search.
     if score >= ARTIST_MATCH_MIN_SCORE:
