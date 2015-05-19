@@ -526,7 +526,7 @@ class LastFmAlbumAgent(Agent.Album):
 
     for index in media.tracks:
       for popular_track in most_popular_tracks.keys():
-        if LevenshteinRatio(popular_track, media.tracks[index].title) > 0.95:
+        if popular_track and LevenshteinRatio(popular_track, media.tracks[index].title) > 0.95:
           t = metadata.tracks[int(index)]
           if Prefs['popular']:
             t.rating_count = most_popular_tracks[popular_track]
