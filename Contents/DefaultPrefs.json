@@ -16,5 +16,11 @@
         "type": "bool",
         "label": "Download popular track information",
         "default": "true"
+    },
+    {
+        "id": "backgroundart",
+        "type": "bool",
+        "label": "Use artist picture as background image",
+        "default": "false"
     }
 ]

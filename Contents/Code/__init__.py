@@ -263,10 +263,10 @@ class LastFmAgent(Agent.Artist):
           data = HTTP.Request(valid_keys[0])
           metadata.posters[valid_keys[0]] = Proxy.Media(data)
           metadata.posters.validate_keys(valid_keys[0])
-          # Use posters as art
-          # TODO: add pref to disable
-          metadata.art[valid_keys[0]] = Proxy.Media(data)
-          metadata.art.validate_keys(valid_keys[0])
+          # Use posters as background art
+          if Prefs['backgroundart']:
+            metadata.art[valid_keys[0]] = Proxy.Media(data)
+            metadata.art.validate_keys(valid_keys[0])
       except:
         Log('Couldn\'t add artwork for artist.')
 
